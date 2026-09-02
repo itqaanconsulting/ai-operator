@@ -17,21 +17,21 @@ class DatabaseTest(unittest.TestCase):
 
     def test_analysis_creates_commitment_and_pending_action(self):
         request = EmailRequest(
-            subject="Graag vrijdag bevestigen",
-            body="Kun je vrijdag bevestigen of we doorgaan?",
-            sender="jan@example.com",
+            subject="Please confirm by Friday",
+            body="Can you confirm by Friday whether we should proceed?",
+            sender="jane@example.com",
             gmail_msg_id="gmail-1",
         )
         analysis = EmailAnalysis(
             category="decision",
-            summary="Jan vraagt om een besluit.",
-            contact_name="Jan",
+            summary="Jane is requesting a decision.",
+            contact_name="Jane",
             company_or_project="Project X",
-            commitment_title="Besluit over Project X geven",
+            commitment_title="Provide a decision on Project X",
             deadline="2026-09-04",
             urgency="high",
-            proposed_action="Controleer het voorstel en reageer op Jan.",
-            suggested_reply="Hoi Jan, ik kom hier vrijdag op terug.",
+            proposed_action="Review the proposal and reply to Jane.",
+            suggested_reply="Hi Jane, I will get back to you by Friday.",
             confidence=0.94,
         )
 
@@ -45,16 +45,16 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(actions[0]["action_type"], "draft_reply")
 
     def test_action_can_only_be_decided_once(self):
-        request = EmailRequest(subject="Actie", body="Kun je dit bekijken?")
+        request = EmailRequest(subject="Action required", body="Can you review this?")
         analysis = EmailAnalysis(
             category="task",
-            summary="Verzoek om controle.",
-            commitment_title="Verzoek bekijken",
-            proposed_action="Bekijk het verzoek.",
+            summary="A review has been requested.",
+            commitment_title="Review the request",
+            proposed_action="Review the request.",
         )
         _, _, action_id = self.db.save_analysis(request, analysis)
 
-        approved = self.db.decide_action(action_id, ActionStatus.APPROVED, "Akkoord")
+        approved = self.db.decide_action(action_id, ActionStatus.APPROVED, "Approved")
         repeated = self.db.decide_action(action_id, ActionStatus.REJECTED, None)
 
         self.assertEqual(approved["status"], "approved")
@@ -62,13 +62,13 @@ class DatabaseTest(unittest.TestCase):
 
     def test_approved_action_can_only_be_claimed_once(self):
         request = EmailRequest(
-            subject="Antwoord nodig", body="Kun je antwoorden?",
-            sender="jan@example.com", gmail_msg_id="gmail-2"
+            subject="Reply required", body="Can you reply?",
+            sender="jane@example.com", gmail_msg_id="gmail-2"
         )
         analysis = EmailAnalysis(
-            category="task", summary="Antwoord gevraagd.",
-            commitment_title="Jan antwoorden", proposed_action="Maak een antwoordconcept.",
-            suggested_reply="Hoi Jan, akkoord."
+            category="task", summary="A reply has been requested.",
+            commitment_title="Reply to Jane", proposed_action="Create a reply draft.",
+            suggested_reply="Hi Jane, approved."
         )
         _, _, action_id = self.db.save_analysis(request, analysis)
         self.db.decide_action(action_id, ActionStatus.APPROVED, None)

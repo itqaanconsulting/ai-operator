@@ -9,7 +9,7 @@ import os
 load_dotenv()
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# --- Database setup (zelfde als main.py) ---
+# --- Legacy database setup ---
 def init_db():
     conn = sqlite3.connect("emails.db")
     cursor = conn.cursor()
@@ -39,20 +39,20 @@ def save_to_db(subject, body, intent, order_number, api_response, gmail_msg_id):
     conn.commit()
     conn.close()
 
-# --- Dummy API's (zelfde als main.py) ---
+# --- Legacy simulated APIs ---
 def dummy_cancel(order_id: str):
-    return {"action": "annulering", "order_id": order_id, "status": "geannuleerd", "message": f"Bestelling {order_id} is geannuleerd."}
+    return {"action": "cancellation", "order_id": order_id, "status": "cancelled", "message": f"Order {order_id} was cancelled."}
 
 def dummy_return(order_id: str, reason: str):
-    return {"action": "retour", "order_id": order_id, "reason": reason, "status": "retour aangevraagd", "message": f"Retour {order_id} geregistreerd. Reden: {reason}"}
+    return {"action": "return", "order_id": order_id, "reason": reason, "status": "return requested", "message": f"Return for order {order_id} was registered. Reason: {reason}"}
 
 def dummy_status(order_id: str):
-    return {"action": "statusopvraging", "order_id": order_id, "status": "onderweg", "expected_delivery": "2026-09-05", "message": f"Bestelling {order_id} is onderweg."}
+    return {"action": "status_check", "order_id": order_id, "status": "in transit", "expected_delivery": "2026-09-05", "message": f"Order {order_id} is in transit."}
 
 def dummy_change_address(order_id: str, new_address: str):
-    return {"action": "adreswijziging", "order_id": order_id, "new_address": new_address, "status": "adres bijgewerkt", "message": f"Adres voor {order_id} gewijzigd naar {new_address}"}
+    return {"action": "address_change", "order_id": order_id, "new_address": new_address, "status": "address updated", "message": f"The address for order {order_id} was changed to {new_address}."}
 
-# --- AI-verwerking (exact dezelfde als in main.py) ---
+# --- Legacy AI processing ---
 def process_email_content(subject: str, body: str, gmail_msg_id: str):
     full_text = f"Subject: {subject}\nBody: {body}"
     
@@ -60,10 +60,10 @@ def process_email_content(subject: str, body: str, gmail_msg_id: str):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": """
-            Je bent een AI-assistent die e-mails analyseert voor klantenservice.
-            Intenties: 'cancel', 'return', 'status', 'change_address'.
-            Extra velden: order_number (verplicht), reason (optioneel), new_address (optioneel).
-            Antwoord ALTIJD in JSON met deze velden.
+            You are an AI assistant that analyzes customer-service emails.
+            Intents: 'cancel', 'return', 'status', and 'change_address'.
+            Fields: order_number (required), reason (optional), and new_address (optional).
+            Always return JSON containing these fields.
             """},
             {"role": "user", "content": full_text}
         ],
@@ -75,53 +75,53 @@ def process_email_content(subject: str, body: str, gmail_msg_id: str):
     order_number = ai_output.get("order_number")
     
     if not order_number:
-        raise ValueError("Geen bestelnummer gevonden")
+        raise ValueError("No order number found")
     
     if intent == "cancel":
         result = dummy_cancel(order_number)
     elif intent == "return":
-        reason = ai_output.get("reason", "onbekende reden")
+        reason = ai_output.get("reason", "unknown reason")
         result = dummy_return(order_number, reason)
     elif intent == "status":
         result = dummy_status(order_number)
     elif intent == "change_address":
-        new_address = ai_output.get("new_address", "onbekend adres")
+        new_address = ai_output.get("new_address", "unknown address")
         result = dummy_change_address(order_number, new_address)
     else:
-        result = {"action": "onbekend", "message": f"Intentie '{intent}' wordt niet ondersteund."}
+        result = {"action": "unknown", "message": f"Intent '{intent}' is not supported."}
     
     save_to_db(subject, body, intent, order_number, result, gmail_msg_id)
     return {"intent": intent, "order_number": order_number, "action_result": result}
 
-# --- Hoofdscript: verwerk alle ongelezen e-mails ---
+# --- Legacy script: process all unread emails ---
 def process_unread():
     service = get_gmail_service()
-    print("📡 Ophalen van ongelezen e-mails...")
+    print("Fetching unread emails...")
     
-    # Haal alle ongelezen e-mails op (max 500)
+    # Fetch up to 500 unread emails.
     results = service.users().messages().list(userId='me', q='is:unread', maxResults=500).execute()
     messages = results.get('messages', [])
     
     if not messages:
-        print("✅ Geen ongelezen e-mails gevonden.")
+        print("No unread emails found.")
         return
     
-    print(f"📧 {len(messages)} ongelezen e-mails gevonden.")
+    print(f"Found {len(messages)} unread emails.")
     
     for msg in messages:
         msg_id = msg['id']
-        print(f"📥 Verwerken: {msg_id}")
+        print(f"Processing: {msg_id}")
         
-        # Haal volledige e-mail op
+        # Fetch the complete email.
         message = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
         
-        subject = "Geen onderwerp"
+        subject = "(no subject)"
         body_text = ""
         payload = message.get('payload', {})
         headers = payload.get('headers', [])
         for header in headers:
             if header.get('name') == 'Subject':
-                subject = header.get('value', 'Geen onderwerp')
+                subject = header.get('value', '(no subject)')
         
         if 'parts' in payload:
             for part in payload['parts']:
@@ -136,24 +136,24 @@ def process_unread():
                 body_text = base64.urlsafe_b64decode(data).decode('utf-8')
         
         if not body_text:
-            print(f"⚠️ Geen tekstbody, overslaan en markeren als gelezen.")
+            print("No text body; skipping and marking the message as read.")
             service.users().messages().modify(userId='me', id=msg_id, body={'removeLabelIds': ['UNREAD']}).execute()
             continue
         
-        # Verwerk met AI
+        # Process with AI.
         try:
             result = process_email_content(subject, body_text, msg_id)
-            print(f"✅ Verwerkt: {result['intent']} - order {result['order_number']}")
+            print(f"Processed: {result['intent']} - order {result['order_number']}")
         except Exception as e:
-            print(f"❌ Fout bij verwerken: {e}")
+            print(f"Processing failed: {e}")
         
-        # Markeer als gelezen
+        # Mark as read.
         try:
             service.users().messages().modify(userId='me', id=msg_id, body={'removeLabelIds': ['UNREAD']}).execute()
-            print(f"📬 Gemarkeerd als gelezen: {msg_id}")
+            print(f"Marked as read: {msg_id}")
         except Exception as e:
-            print(f"⚠️ Fout bij markeren: {e}")
+            print(f"Failed to mark as read: {e}")
 
 if __name__ == "__main__":
-    init_db()  # Zorg dat de database bestaat
+    init_db()  # Ensure that the legacy database exists.
     process_unread()

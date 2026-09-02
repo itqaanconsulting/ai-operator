@@ -65,13 +65,13 @@ class FakeService:
 
 class GmailOperatorTest(unittest.TestCase):
     def setUp(self):
-        body = base64.urlsafe_b64encode(b"Kun je vrijdag antwoorden?").decode()
+        body = base64.urlsafe_b64encode(b"Can you reply by Friday?").decode()
         self.message = {
             "id": "msg-1",
             "threadId": "thread-1",
             "payload": {
                 "headers": [
-                    {"name": "From", "value": "Jan <jan@example.com>"},
+                    {"name": "From", "value": "Jane <jane@example.com>"},
                     {"name": "Subject", "value": "Project X"},
                     {"name": "Message-ID", "value": "<mail-1@example.com>"},
                 ],
@@ -86,21 +86,21 @@ class GmailOperatorTest(unittest.TestCase):
 
         self.assertEqual(len(emails), 1)
         self.assertEqual(emails[0].gmail_msg_id, "msg-1")
-        self.assertEqual(emails[0].body, "Kun je vrijdag antwoorden?")
+        self.assertEqual(emails[0].body, "Can you reply by Friday?")
         self.assertEqual(
             self.service.users_resource.messages_resource.list_kwargs["labelIds"],
             ["label-1"],
         )
 
     def test_create_reply_draft_keeps_thread_and_never_sends(self):
-        result = self.operator.create_reply_draft("msg-1", "Hoi Jan, akkoord.")
+        result = self.operator.create_reply_draft("msg-1", "Hi Jane, approved.")
 
         draft_body = self.service.users_resource.drafts_resource.body
         raw = base64.urlsafe_b64decode(draft_body["message"]["raw"])
         self.assertEqual(result["draft_id"], "draft-1")
         self.assertEqual(draft_body["message"]["threadId"], "thread-1")
         self.assertIn(b"Subject: Re: Project X", raw)
-        self.assertIn(b"jan@example.com", raw)
+        self.assertIn(b"jane@example.com", raw)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ class GmailOperator:
         if not body.strip():
             raise ValueError(f"Gmail message {message.get('id')} has no readable text body")
         return EmailRequest(
-            subject=headers.get("subject") or "(geen onderwerp)",
+            subject=headers.get("subject") or "(no subject)",
             body=body,
             sender=headers.get("from") or None,
             gmail_msg_id=message.get("id"),
@@ -75,7 +75,7 @@ class GmailOperator:
         recipient = headers.get("from")
         if not recipient:
             raise ValueError("Original email has no From header")
-        subject = headers.get("subject") or "(geen onderwerp)"
+        subject = headers.get("subject") or "(no subject)"
         if not subject.casefold().startswith("re:"):
             subject = f"Re: {subject}"
         draft = MIMEText(reply_text, "plain", "utf-8")

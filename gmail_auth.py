@@ -23,4 +23,4 @@ def get_gmail_service():
 
 if __name__ == '__main__':
     service = get_gmail_service()
-    print("✅ Verbinding met Gmail API geslaagd!")
+    print("Gmail API connection successful.")

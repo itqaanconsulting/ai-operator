@@ -3,11 +3,11 @@ import time
 
 def mark_all_as_read():
     service = get_gmail_service()
-    print("📡 Start: alle ongelezen e-mails markeren als gelezen...")
+    print("Starting: marking all unread emails as read...")
     
     total_marked = 0
     while True:
-        # Haal maximaal 500 ongelezen e-mails per keer op
+        # Fetch up to 500 unread emails per batch.
         results = service.users().messages().list(
             userId='me',
             q='is:unread',
@@ -16,12 +16,12 @@ def mark_all_as_read():
         
         messages = results.get('messages', [])
         if not messages:
-            print(f"✅ Klaar! {total_marked} e-mails gemarkeerd als gelezen.")
+            print(f"Done. Marked {total_marked} emails as read.")
             break
         
         msg_ids = [msg['id'] for msg in messages]
         
-        # Markeer ze allemaal als gelezen in één batch
+        # Mark every message in this batch as read.
         for msg_id in msg_ids:
             try:
                 service.users().messages().modify(
@@ -30,12 +30,12 @@ def mark_all_as_read():
                     body={'removeLabelIds': ['UNREAD']}
                 ).execute()
                 total_marked += 1
-                print(f"📧 {total_marked} - Gemarkeerd: {msg_id}")
+                print(f"{total_marked} - Marked as read: {msg_id}")
             except Exception as e:
-                print(f"⚠️ Fout bij {msg_id}: {e}")
+                print(f"Failed for {msg_id}: {e}")
         
-        print(f"⏳ {len(msg_ids)} e-mails verwerkt, nog bezig...")
-        time.sleep(0.5)  # Even pauze om rate-limiting te voorkomen
+        print(f"Processed {len(msg_ids)} emails; continuing...")
+        time.sleep(0.5)  # Brief pause to avoid rate limiting.
 
 if __name__ == "__main__":
     mark_all_as_read()
