@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from analyzer import EmailAnalyzer
+from calendar_auth import get_calendar_service
+from calendar_operator import CalendarOperator
 from database import Database
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_text
@@ -22,13 +24,14 @@ from models import (
     EntityMergeRequest,
     OpenLoopMonitorRequest,
     CompleteCommitmentRequest,
+    CalendarImportRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.6.0")
+app = FastAPI(title="AI Commitment Operator", version="0.7.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -45,6 +48,8 @@ def health():
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
         "automatic_sending_enabled": False,
+        "calendar_manual_import_enabled": True,
+        "calendar_writes_enabled": False,
     }
 
 
@@ -140,6 +145,43 @@ def import_from_gmail(request: GmailImportRequest):
         return result
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/calendar/import")
+def import_from_calendar(request: CalendarImportRequest):
+    """Import a bounded event window without changing Google Calendar."""
+    try:
+        events = CalendarOperator(get_calendar_service()).list_events(
+            calendar_id=request.calendar_id,
+            days_before=request.days_before,
+            days_after=request.days_after,
+        )
+        result = {"found": len(events), "created": [], "updated": [], "unmatched": []}
+        for event in events:
+            searchable_text = " ".join(filter(None, [
+                event.get("title"), event.get("description"), event.get("location")
+            ]))
+            matches = database.match_entities(searchable_text)
+            saved, created = database.save_calendar_event(
+                event, [match["id"] for match in matches]
+            )
+            item = {
+                "calendar_event_id": saved["id"],
+                "google_event_id": event["google_event_id"],
+                "title": event["title"],
+                "entities": [match["name"] for match in matches],
+            }
+            result["created" if created else "updated"].append(item)
+            if not matches:
+                result["unmatched"].append(saved["id"])
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/calendar/events")
+def list_calendar_events():
+    return {"events": database.list_calendar_events()}
 
 
 @app.post("/actions/{action_id}/execute")

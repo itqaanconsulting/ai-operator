@@ -116,10 +116,34 @@ class Database:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (commitment_id, alert_type, deadline_snapshot)
                 );
+                CREATE TABLE IF NOT EXISTS calendar_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    google_event_id TEXT NOT NULL,
+                    calendar_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    location TEXT,
+                    start_at TEXT,
+                    end_at TEXT,
+                    all_day INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'confirmed',
+                    attendees_json TEXT NOT NULL DEFAULT '[]',
+                    html_link TEXT,
+                    meeting_link TEXT,
+                    updated_at_source TEXT,
+                    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (google_event_id, calendar_id)
+                );
+                CREATE TABLE IF NOT EXISTS calendar_event_entities (
+                    calendar_event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    PRIMARY KEY (calendar_event_id, entity_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
                 CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
+                CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
                 """
             )
             self._backfill_entities(connection)
@@ -412,6 +436,14 @@ class Database:
             )
             connection.execute("DELETE FROM email_entities WHERE entity_id = ?", (source["id"],))
             connection.execute(
+                """INSERT OR IGNORE INTO calendar_event_entities (calendar_event_id, entity_id)
+                   SELECT calendar_event_id, ? FROM calendar_event_entities WHERE entity_id = ?""",
+                (target_id, source["id"]),
+            )
+            connection.execute(
+                "DELETE FROM calendar_event_entities WHERE entity_id = ?", (source["id"],)
+            )
+            connection.execute(
                 "UPDATE decisions SET entity_id = ? WHERE entity_id = ?", (target_id, source["id"])
             )
             connection.execute("DELETE FROM entity_aliases WHERE entity_id = ?", (source["id"],))
@@ -531,6 +563,90 @@ class Database:
                 "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
             ).fetchone())
 
+    def match_entities(self, text: str):
+        normalized_text = f" {normalize_entity_name(text)} "
+        if not normalized_text.strip():
+            return []
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT e.id, e.name, e.normalized_name AS candidate FROM entities e
+                   UNION ALL
+                   SELECT e.id, e.name, a.normalized_alias AS candidate
+                   FROM entity_aliases a JOIN entities e ON e.id = a.entity_id"""
+            ).fetchall()
+            matched = {}
+            for row in rows:
+                candidate = row["candidate"]
+                if candidate and f" {candidate} " in normalized_text:
+                    current = matched.get(row["id"])
+                    if current is None or len(candidate) > len(current["matched_name"]):
+                        matched[row["id"]] = {
+                            "id": row["id"], "name": row["name"], "matched_name": candidate
+                        }
+            return sorted(matched.values(), key=lambda item: len(item["matched_name"]), reverse=True)
+
+    def save_calendar_event(self, event: dict, entity_ids: list[int]):
+        with self.connect() as connection:
+            existing = connection.execute(
+                """SELECT id FROM calendar_events
+                   WHERE google_event_id = ? AND calendar_id = ?""",
+                (event["google_event_id"], event["calendar_id"]),
+            ).fetchone()
+            values = (
+                event["title"], event.get("description"), event.get("location"),
+                event.get("start_at"), event.get("end_at"), int(event.get("all_day", False)),
+                event.get("status", "confirmed"), event.get("attendees_json", "[]"),
+                event.get("html_link"), event.get("meeting_link"), event.get("updated_at_source"),
+            )
+            if existing:
+                event_id = existing["id"]
+                connection.execute(
+                    """UPDATE calendar_events SET title = ?, description = ?, location = ?,
+                       start_at = ?, end_at = ?, all_day = ?, status = ?, attendees_json = ?,
+                       html_link = ?, meeting_link = ?, updated_at_source = ?,
+                       imported_at = CURRENT_TIMESTAMP WHERE id = ?""",
+                    (*values, event_id),
+                )
+                created = False
+            else:
+                cursor = connection.execute(
+                    """INSERT INTO calendar_events
+                       (google_event_id, calendar_id, title, description, location,
+                        start_at, end_at, all_day, status, attendees_json, html_link,
+                        meeting_link, updated_at_source)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (event["google_event_id"], event["calendar_id"], *values),
+                )
+                event_id = cursor.lastrowid
+                created = True
+            connection.execute(
+                "DELETE FROM calendar_event_entities WHERE calendar_event_id = ?", (event_id,)
+            )
+            for entity_id in entity_ids:
+                connection.execute(
+                    """INSERT OR IGNORE INTO calendar_event_entities
+                       (calendar_event_id, entity_id) VALUES (?, ?)""", (event_id, entity_id)
+                )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('calendar_event', ?, ?, ?)""",
+                (event_id, "imported" if created else "updated",
+                 json.dumps({"entity_ids": entity_ids, "google_event_id": event["google_event_id"]})),
+            )
+            row = connection.execute("SELECT * FROM calendar_events WHERE id = ?", (event_id,)).fetchone()
+            return dict(row), created
+
+    def list_calendar_events(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT ce.*, GROUP_CONCAT(DISTINCT e.name) AS entity_names
+                   FROM calendar_events ce
+                   LEFT JOIN calendar_event_entities cee ON cee.calendar_event_id = ce.id
+                   LEFT JOIN entities e ON e.id = cee.entity_id
+                   GROUP BY ce.id ORDER BY ce.start_at"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def add_decision(self, entity_id: int, request):
         with self.connect() as connection:
             if request.source_email_id is not None:
@@ -580,12 +696,20 @@ class Database:
             decisions = connection.execute(
                 "SELECT * FROM decisions WHERE entity_id = ? ORDER BY decided_at DESC", (entity_id,)
             ).fetchall()
+            calendar_events = connection.execute(
+                """SELECT ce.id, ce.title, ce.location, ce.start_at, ce.end_at, ce.all_day,
+                          ce.status, ce.attendees_json, ce.meeting_link, ce.html_link
+                   FROM calendar_events ce
+                   JOIN calendar_event_entities cee ON cee.calendar_event_id = ce.id
+                   WHERE cee.entity_id = ? ORDER BY ce.start_at DESC""", (entity_id,)
+            ).fetchall()
             return {
                 "entity": dict(entity),
                 "emails": [dict(row) for row in emails],
                 "commitments": [dict(row) for row in commitments],
                 "actions": [dict(row) for row in actions],
                 "decisions": [dict(row) for row in decisions],
+                "calendar_events": [dict(row) for row in calendar_events],
             }
 
     def entity_timeline(self, entity_id: int):
@@ -601,5 +725,8 @@ class Database:
             events.append({"type": "action", "timestamp": action["created_at"], "data": action})
         for decision in context["decisions"]:
             events.append({"type": "decision", "timestamp": decision["decided_at"], "data": decision})
+        for calendar_event in context["calendar_events"]:
+            events.append({"type": "calendar_event", "timestamp": calendar_event["start_at"],
+                           "data": calendar_event})
         events.sort(key=lambda event: event["timestamp"] or "", reverse=True)
         return {"entity": context["entity"], "events": events}

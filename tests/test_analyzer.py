@@ -11,6 +11,7 @@ class FakeCompletions:
             "entity": {"name": "Incorrect model shape"},
             "current_status": "Waiting for campaign approval.",
             "recent_activity": ["Approval was requested."],
+            "upcoming_meetings": ["Campaign review on September 4."],
             "open_commitments": ["Approve campaign."],
             "pending_actions": ["Review proposal."],
             "decisions": [],
@@ -36,6 +37,7 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(brief.entity, "Carrefour")
         self.assertEqual(brief.recommended_next_action, "Review the proposal.")
         self.assertEqual(brief.decisions, [])
+        self.assertEqual(brief.upcoming_meetings, ["Campaign review on September 4."])
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ class EntityStatusBrief(BaseModel):
     entity: str
     current_status: str
     recent_activity: list[str] = Field(default_factory=list)
+    upcoming_meetings: list[str] = Field(default_factory=list)
     open_commitments: list[str] = Field(default_factory=list)
     pending_actions: list[str] = Field(default_factory=list)
     decisions: list[str] = Field(default_factory=list)
@@ -84,3 +85,9 @@ class OpenLoopMonitorRequest(BaseModel):
 
 class CompleteCommitmentRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
+
+
+class CalendarImportRequest(BaseModel):
+    calendar_id: str = Field(default="primary", min_length=1, max_length=300)
+    days_before: int = Field(default=30, ge=0, le=365)
+    days_after: int = Field(default=90, ge=1, le=365)

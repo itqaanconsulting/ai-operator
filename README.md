@@ -217,6 +217,42 @@ workflows:
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.
 
+## Read-only Google Calendar context
+
+The operator can import a bounded window of Calendar events as a second context
+source. It requests `calendar.readonly`; no code path creates, edits, or deletes
+Google Calendar events.
+
+Before the first import:
+
+1. Enable the **Google Calendar API** in the same Google Cloud project.
+2. Stop the API if it is running.
+3. Run `python calendar_auth.py` and approve the additional read-only permission.
+4. Restart the API.
+
+The shared token covers both Gmail and Calendar. Adding the Calendar scope requires
+one new authorization even when Gmail was already connected.
+
+Import a bounded event window:
+
+`POST /calendar/import`
+
+```json
+{
+  "calendar_id": "primary",
+  "days_before": 30,
+  "days_after": 90
+}
+```
+
+Events are stored idempotently by Google event ID and calendar ID. Titles,
+descriptions, and locations are matched deterministically against canonical entity
+names and aliases. Unmatched events remain stored and are reported; the system does
+not invent a company or project association.
+
+Inspect imported events with `GET /calendar/events`. Matched meetings appear in the
+entity timeline, grounded status brief, and operator dashboard.
+
 ## Tests
 
 ```powershell
@@ -231,6 +267,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Test the complete pilot from Gmail import through dashboard approval.
-2. Schedule the monitor to run periodically.
-3. Add Google Calendar as the second external context source.
+1. Authorize Calendar and import one Carrefour test meeting.
+2. Verify that the meeting appears in the entity status brief and dashboard.
+3. Schedule the open-loop monitor to run periodically.

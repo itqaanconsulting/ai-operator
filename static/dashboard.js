@@ -1,9 +1,10 @@
-const state = { entities: [], commitments: [], actions: [], selectedEntity: null };
+const state = { entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null };
 
 const elements = {
   entities: document.querySelector("#entities"),
   commitments: document.querySelector("#commitments"),
   actions: document.querySelector("#actions"),
+  calendarEvents: document.querySelector("#calendar-events"),
   notification: document.querySelector("#notification"),
   statusTitle: document.querySelector("#status-title"),
   statusContent: document.querySelector("#status-content"),
@@ -95,6 +96,18 @@ function renderActions() {
   elements.actions.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
 }
 
+function renderCalendarEvents() {
+  elements.calendarEvents.innerHTML = state.calendarEvents.length ? state.calendarEvents.map(event => `
+    <article class="list-card">
+      <h3>${escapeHtml(event.title)}</h3>
+      <div class="meta">
+        <span class="pill">${event.all_day ? "all day" : "meeting"}</span>
+        <span>${escapeHtml(event.start_at || "No start time")}</span>
+        <span>${escapeHtml(event.entity_names || "Unmatched")}</span>
+      </div>
+    </article>`).join("") : '<p class="empty-state">No Calendar events imported yet.</p>';
+}
+
 function updateMetrics() {
   document.querySelector("#entity-count").textContent = state.entities.length;
   document.querySelector("#commitment-count").textContent = state.commitments.length;
@@ -105,14 +118,15 @@ function updateMetrics() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions] = await Promise.all([
-      api("/entities"), api("/commitments?status=open"), api("/actions"),
+    const [entities, commitments, actions, calendar] = await Promise.all([
+      api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
     state.actions = actions.actions;
+    state.calendarEvents = calendar.events;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
-    renderEntities(); renderCommitments(); renderActions(); updateMetrics();
+    renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents(); updateMetrics();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -143,6 +157,7 @@ async function generateStatus() {
       ${listBlock("Current status", [brief.current_status], true)}
       ${listBlock("Recommended next action", [brief.recommended_next_action], true)}
       ${listBlock("Recent activity", brief.recent_activity)}
+      ${listBlock("Upcoming meetings", brief.upcoming_meetings)}
       ${listBlock("Open commitments", brief.open_commitments)}
       ${listBlock("Pending actions", brief.pending_actions)}
       ${listBlock("Decisions", brief.decisions)}

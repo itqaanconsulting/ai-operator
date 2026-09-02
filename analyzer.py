@@ -48,7 +48,7 @@ class EmailAnalyzer:
                         "using only the supplied structured records. Do not invent events, dates, "
                         "decisions, blockers, or actions. Clearly list missing information. Return "
                         "JSON with entity, current_status, recent_activity, open_commitments, "
-                        "pending_actions, decisions, blockers, recommended_next_action, and "
+                        "upcoming_meetings, pending_actions, decisions, blockers, recommended_next_action, and "
                         "missing_information. Every list contains short strings."
                     ),
                 },
