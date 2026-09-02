@@ -88,7 +88,12 @@
         </form>
         <div class="schedule-control">
           <div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div>
-          <button id="schedule-toggle-button" class="button secondary">Configure</button>
+          <div class="schedule-actions">
+            <label for="schedule-interval">Every</label>
+            <input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes">
+            <span>minutes</span>
+            <button id="schedule-toggle-button" class="button secondary">Configure</button>
+          </div>
         </div>
       </article>
 

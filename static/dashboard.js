@@ -323,6 +323,8 @@ function renderSchedule() {
     ? `Enabled every ${state.contractSchedule.interval_minutes} minutes for label “${state.contractSchedule.label}”.${last}`
     : `Disabled.${last}`;
   const button = document.querySelector("#schedule-toggle-button");
+  document.querySelector("#schedule-interval").value = state.contractSchedule.interval_minutes || 15;
+  document.querySelector("#schedule-interval").disabled = enabled;
   button.textContent = enabled ? "Disable schedule" : "Enable schedule";
   button.className = `button ${enabled ? "reject" : "approve"}`;
 }
@@ -332,9 +334,7 @@ async function toggleSchedule() {
   if (!current) return;
   let interval = current.interval_minutes || 15;
   if (!current.enabled) {
-    const value = window.prompt("Check Gmail every how many minutes?", String(interval));
-    if (value === null) return;
-    interval = Number(value);
+    interval = Number(document.querySelector("#schedule-interval").value);
     if (!Number.isInteger(interval) || interval < 1 || interval > 1440) {
       notify("Enter a whole number between 1 and 1440 minutes.", true); return;
     }
