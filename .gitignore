@@ -1,7 +1,7 @@
 venv/
 .env
 credentials.json
-token.pickle
+token*.pickle
 __pycache__/
 *.pyc
 *.db

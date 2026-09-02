@@ -13,12 +13,14 @@ from models import (
     DecisionRequest,
     EmailRequest,
     GmailImportRequest,
+    RecordDecisionRequest,
+    EntityStatusBrief,
 )
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.2.0")
+app = FastAPI(title="AI Commitment Operator", version="0.3.0")
 
 
 @app.on_event("startup")
@@ -134,6 +136,43 @@ def execute_action(action_id: int):
         return database.finish_action(action_id, result)
     except Exception as exc:
         database.fail_action(action_id, str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/entities")
+def list_entities():
+    return {"entities": database.list_entities()}
+
+
+def _entity_or_404(entity_name: str):
+    entity = database.get_entity(entity_name)
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_name}' was not found")
+    return entity
+
+
+@app.get("/entities/{entity_name}/timeline")
+def get_entity_timeline(entity_name: str):
+    entity = _entity_or_404(entity_name)
+    return database.entity_timeline(entity["id"])
+
+
+@app.post("/entities/{entity_name}/decisions")
+def record_entity_decision(entity_name: str, decision: RecordDecisionRequest):
+    entity = _entity_or_404(entity_name)
+    try:
+        return database.add_decision(entity["id"], decision)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/entities/{entity_name}/status", response_model=EntityStatusBrief)
+def get_entity_status(entity_name: str):
+    entity = _entity_or_404(entity_name)
+    context = database.entity_context(entity["id"])
+    try:
+        return EmailAnalyzer().create_status_brief(context)
+    except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

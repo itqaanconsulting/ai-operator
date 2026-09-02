@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from database import Database
-from models import ActionStatus, EmailAnalysis, EmailRequest
+from models import ActionStatus, EmailAnalysis, EmailRequest, RecordDecisionRequest
 
 
 class DatabaseTest(unittest.TestCase):
@@ -81,6 +81,53 @@ class DatabaseTest(unittest.TestCase):
         self.assertIsNone(duplicate)
         self.assertEqual(finished["status"], "executed")
         self.assertIn("draft-1", finished["payload_json"])
+
+    def test_emails_are_grouped_into_entity_context_and_timeline(self):
+        first = EmailRequest(subject="Campaign", body="Please approve the campaign.")
+        second = EmailRequest(subject="Follow-up", body="Is the campaign approved?")
+        self.db.save_analysis(first, EmailAnalysis(
+            category="decision", summary="Campaign approval requested.",
+            company_or_project="Carrefour", commitment_title="Approve campaign",
+            proposed_action="Review the campaign proposal."
+        ))
+        self.db.save_analysis(second, EmailAnalysis(
+            category="follow_up", summary="Campaign decision follow-up.",
+            company_or_project="carrefour", commitment_title="Reply with decision",
+            proposed_action="Reply with the final decision."
+        ))
+
+        entities = self.db.list_entities()
+        self.assertEqual(len(entities), 1)
+        self.assertEqual(entities[0]["email_count"], 2)
+        entity = self.db.get_entity("CARREFOUR")
+        decision = self.db.add_decision(entity["id"], RecordDecisionRequest(
+            title="Campaign direction", decision="Proceed with the campaign.",
+            rationale="The forecast meets the target."
+        ))
+        context = self.db.entity_context(entity["id"])
+        timeline = self.db.entity_timeline(entity["id"])
+
+        self.assertEqual(decision["status"], "final")
+        self.assertEqual(len(context["emails"]), 2)
+        self.assertEqual(len(context["commitments"]), 2)
+        self.assertEqual(len(context["decisions"]), 1)
+        self.assertIn("decision", {event["type"] for event in timeline["events"]})
+
+    def test_decision_source_must_belong_to_entity(self):
+        self.db.save_analysis(
+            EmailRequest(subject="A", body="One"),
+            EmailAnalysis(category="information", summary="One", company_or_project="Alpha"),
+        )
+        unrelated_email_id, _, _ = self.db.save_analysis(
+            EmailRequest(subject="B", body="Two"),
+            EmailAnalysis(category="information", summary="Two", company_or_project="Beta"),
+        )
+        alpha = self.db.get_entity("Alpha")
+
+        with self.assertRaisesRegex(ValueError, "not linked"):
+            self.db.add_decision(alpha["id"], RecordDecisionRequest(
+                title="Invalid source", decision="Do something", source_email_id=unrelated_email_id
+            ))
 
 
 if __name__ == "__main__":

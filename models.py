@@ -48,3 +48,23 @@ class DecisionRequest(BaseModel):
 class GmailImportRequest(BaseModel):
     label: str = Field(default="AI-Operator", min_length=1, max_length=100)
     max_results: int = Field(default=10, ge=1, le=50)
+
+
+class RecordDecisionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    decision: str = Field(min_length=1, max_length=5000)
+    rationale: str | None = Field(default=None, max_length=5000)
+    status: Literal["proposed", "final", "reversed"] = "final"
+    source_email_id: int | None = None
+
+
+class EntityStatusBrief(BaseModel):
+    entity: str
+    current_status: str
+    recent_activity: list[str] = Field(default_factory=list)
+    open_commitments: list[str] = Field(default_factory=list)
+    pending_actions: list[str] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    recommended_next_action: str
+    missing_information: list[str] = Field(default_factory=list)

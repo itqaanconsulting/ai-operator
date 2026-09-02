@@ -1,9 +1,14 @@
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
 from models import ActionStatus, EmailAnalysis
+
+
+def normalize_entity_name(name: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", name.casefold()).split())
 
 
 class Database:
@@ -72,10 +77,85 @@ class Database:
                     details_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL UNIQUE,
+                    entity_type TEXT NOT NULL DEFAULT 'unknown',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS entity_aliases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    alias TEXT NOT NULL,
+                    normalized_alias TEXT NOT NULL UNIQUE
+                );
+                CREATE TABLE IF NOT EXISTS email_entities (
+                    email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    PRIMARY KEY (email_id, entity_id)
+                );
+                CREATE TABLE IF NOT EXISTS decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    rationale TEXT,
+                    status TEXT NOT NULL DEFAULT 'final',
+                    source_email_id INTEGER REFERENCES emails(id),
+                    decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
+                CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
                 """
             )
+            self._backfill_entities(connection)
+
+    @staticmethod
+    def _ensure_entity(connection, name: str):
+        normalized = normalize_entity_name(name)
+        if not normalized:
+            return None
+        row = connection.execute(
+            """SELECT e.* FROM entities e
+               LEFT JOIN entity_aliases a ON a.entity_id = e.id
+               WHERE e.normalized_name = ? OR a.normalized_alias = ?
+               LIMIT 1""",
+            (normalized, normalized),
+        ).fetchone()
+        if row:
+            return row["id"]
+        cursor = connection.execute(
+            "INSERT INTO entities (name, normalized_name) VALUES (?, ?)",
+            (name.strip(), normalized),
+        )
+        return cursor.lastrowid
+
+    def _backfill_entities(self, connection):
+        rows = connection.execute(
+            """SELECT e.id, e.analysis_json, c.company_or_project
+               FROM emails e
+               LEFT JOIN commitments c ON c.email_id = e.id
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM email_entities ee WHERE ee.email_id = e.id
+               )"""
+        ).fetchall()
+        for row in rows:
+            name = row["company_or_project"]
+            if not name and row["analysis_json"]:
+                try:
+                    name = json.loads(row["analysis_json"]).get("company_or_project")
+                except (TypeError, json.JSONDecodeError):
+                    name = None
+            if name:
+                entity_id = self._ensure_entity(connection, name)
+                connection.execute(
+                    "INSERT OR IGNORE INTO email_entities (email_id, entity_id) VALUES (?, ?)",
+                    (row["id"], entity_id),
+                )
 
     def save_analysis(self, request, analysis: EmailAnalysis):
         with self.connect() as connection:
@@ -93,6 +173,12 @@ class Database:
                  analysis.category, analysis.summary, analysis.model_dump_json()),
             )
             email_id = cursor.lastrowid
+            if analysis.company_or_project:
+                entity_id = self._ensure_entity(connection, analysis.company_or_project)
+                connection.execute(
+                    "INSERT INTO email_entities (email_id, entity_id) VALUES (?, ?)",
+                    (email_id, entity_id),
+                )
             commitment_id = None
             action_id = None
             if analysis.commitment_title:
@@ -220,3 +306,99 @@ class Database:
                    VALUES ('action', ?, 'failed', ?)""",
                 (action_id, json.dumps({"error": error_message[:2000]})),
             )
+
+    def list_entities(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT e.*, COUNT(DISTINCT ee.email_id) AS email_count,
+                          COUNT(DISTINCT CASE WHEN c.status = 'open' THEN c.id END) AS open_commitment_count
+                   FROM entities e
+                   LEFT JOIN email_entities ee ON ee.entity_id = e.id
+                   LEFT JOIN commitments c ON c.email_id = ee.email_id
+                   GROUP BY e.id ORDER BY e.name"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_entity(self, name_or_alias: str):
+        normalized = normalize_entity_name(name_or_alias)
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT DISTINCT e.* FROM entities e
+                   LEFT JOIN entity_aliases a ON a.entity_id = e.id
+                   WHERE e.normalized_name = ? OR a.normalized_alias = ?""",
+                (normalized, normalized),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def add_decision(self, entity_id: int, request):
+        with self.connect() as connection:
+            if request.source_email_id is not None:
+                linked = connection.execute(
+                    "SELECT 1 FROM email_entities WHERE entity_id = ? AND email_id = ?",
+                    (entity_id, request.source_email_id),
+                ).fetchone()
+                if not linked:
+                    raise ValueError("Source email is not linked to this entity")
+            cursor = connection.execute(
+                """INSERT INTO decisions
+                   (entity_id, title, decision, rationale, status, source_email_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (entity_id, request.title, request.decision, request.rationale,
+                 request.status, request.source_email_id),
+            )
+            decision_id = cursor.lastrowid
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('decision', ?, 'recorded', ?)""",
+                (decision_id, json.dumps({"entity_id": entity_id, "status": request.status})),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM decisions WHERE id = ?", (decision_id,)
+            ).fetchone())
+
+    def entity_context(self, entity_id: int):
+        with self.connect() as connection:
+            entity = connection.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
+            if not entity:
+                return None
+            emails = connection.execute(
+                """SELECT e.id, e.sender, e.subject, e.category, e.summary, e.created_at
+                   FROM emails e JOIN email_entities ee ON ee.email_id = e.id
+                   WHERE ee.entity_id = ? ORDER BY e.created_at DESC""", (entity_id,)
+            ).fetchall()
+            commitments = connection.execute(
+                """SELECT c.* FROM commitments c JOIN email_entities ee ON ee.email_id = c.email_id
+                   WHERE ee.entity_id = ? ORDER BY c.created_at DESC""", (entity_id,)
+            ).fetchall()
+            actions = connection.execute(
+                """SELECT a.id, a.action_type, a.description, a.status, a.decision_note,
+                          a.created_at, a.decided_at, a.executed_at
+                   FROM proposed_actions a JOIN email_entities ee ON ee.email_id = a.email_id
+                   WHERE ee.entity_id = ? ORDER BY a.created_at DESC""", (entity_id,)
+            ).fetchall()
+            decisions = connection.execute(
+                "SELECT * FROM decisions WHERE entity_id = ? ORDER BY decided_at DESC", (entity_id,)
+            ).fetchall()
+            return {
+                "entity": dict(entity),
+                "emails": [dict(row) for row in emails],
+                "commitments": [dict(row) for row in commitments],
+                "actions": [dict(row) for row in actions],
+                "decisions": [dict(row) for row in decisions],
+            }
+
+    def entity_timeline(self, entity_id: int):
+        context = self.entity_context(entity_id)
+        if context is None:
+            return None
+        events = []
+        for email in context["emails"]:
+            events.append({"type": "email", "timestamp": email["created_at"], "data": email})
+        for commitment in context["commitments"]:
+            events.append({"type": "commitment", "timestamp": commitment["created_at"], "data": commitment})
+        for action in context["actions"]:
+            events.append({"type": "action", "timestamp": action["created_at"], "data": action})
+        for decision in context["decisions"]:
+            events.append({"type": "decision", "timestamp": decision["decided_at"], "data": decision})
+        events.sort(key=lambda event: event["timestamp"] or "", reverse=True)
+        return {"entity": context["entity"], "events": events}

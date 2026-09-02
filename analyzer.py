@@ -3,7 +3,7 @@ import os
 
 from openai import OpenAI
 
-from models import EmailAnalysis, EmailRequest
+from models import EmailAnalysis, EmailRequest, EntityStatusBrief
 
 
 SYSTEM_PROMPT = """
@@ -36,3 +36,36 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty analysis")
         return EmailAnalysis.model_validate(json.loads(content))
+
+    def create_status_brief(self, context: dict) -> EntityStatusBrief:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious executive operator. Produce a factual status brief "
+                        "using only the supplied structured records. Do not invent events, dates, "
+                        "decisions, blockers, or actions. Clearly list missing information. Return "
+                        "JSON with entity, current_status, recent_activity, open_commitments, "
+                        "pending_actions, decisions, blockers, recommended_next_action, and "
+                        "missing_information. Every list contains short strings."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(context, default=str)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty status brief")
+        data = json.loads(content)
+        source_entity = context.get("entity")
+        canonical_name = (
+            source_entity.get("name") if isinstance(source_entity, dict) else source_entity
+        )
+        if not canonical_name:
+            raise ValueError("Status context has no canonical entity name")
+        data["entity"] = canonical_name
+        return EntityStatusBrief.model_validate(data)

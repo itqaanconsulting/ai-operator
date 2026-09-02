@@ -15,6 +15,8 @@ automatically.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.
+- Groups related emails, commitments, actions, and decisions by company or project.
+- Produces a grounded status brief with a recommended next action.
 
 The Gmail poller does not start automatically. Importing does not change labels
 or mark messages as read. The operator can only create drafts; it has no endpoint
@@ -96,6 +98,44 @@ Only an approved `draft_reply` action linked to a Gmail message can be executed.
 The result is a Gmail draft, not a sent message. An atomic status transition
 prevents duplicate execution.
 
+## Company and project context
+
+Every analyzed `company_or_project` value is linked to a persistent entity.
+Matching is case-insensitive, so `Carrefour`, `carrefour`, and `CARREFOUR` resolve
+to the same record.
+
+List known entities:
+
+`GET /entities`
+
+Inspect the chronological history for an entity:
+
+`GET /entities/Carrefour/timeline`
+
+Record an explicit business decision:
+
+`POST /entities/Carrefour/decisions`
+
+```json
+{
+  "title": "Campaign direction",
+  "decision": "Proceed with the campaign.",
+  "rationale": "The forecast meets the target.",
+  "status": "final",
+  "source_email_id": null
+}
+```
+
+Ask for a current status brief:
+
+`GET /entities/Carrefour/status`
+
+The application first retrieves only records linked to the requested entity.
+AI then turns that structured context into a concise status, open commitments,
+pending actions, decisions, blockers, missing information, and one recommended
+next action. The model is explicitly instructed not to invent facts outside the
+retrieved records.
+
 ## Tests
 
 ```powershell
@@ -110,6 +150,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Run the safe Gmail workflow with one dedicated test message.
+1. Test the entity timeline and status brief with several related emails.
 2. Monitor open commitments and propose deadline-based follow-ups.
 3. Build a small dashboard for the inbox, approvals, and open loops.
