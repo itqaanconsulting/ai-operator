@@ -269,7 +269,8 @@ triggered through the API; a scheduler can invoke the same operation later.
 The default dashboard follows one email-first workflow:
 
 1. Add the Gmail label `AI-Operator` to relevant messages.
-2. Click **Scan Gmail**. AI extracts tasks, deadlines, and proposed actions.
+2. Click **Scan Gmail**. One audited automation run extracts tasks, deadlines,
+   and proposed actions, then checks existing open loops for follow-up.
 3. Review the findings and approve or reject each proposed action.
 4. For an approved reply action, create a Gmail draft. Nothing is sent.
 

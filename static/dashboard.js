@@ -417,8 +417,9 @@ async function importGmail() {
   const button = document.querySelector("#gmail-import-button");
   button.disabled = true;
   try {
-    const result = await api("/gmail/import", { method: "POST", body: JSON.stringify({ label: "AI-Operator", max_results: 10 }) });
-    notify(`Scan complete: ${result.processed.length} processed, ${result.skipped.length} already known, ${result.errors.length} errors.`, result.errors.length > 0);
+    const result = await api("/automation/inbox", { method: "POST", body: JSON.stringify({ label: "AI-Operator", max_results: 10 }) });
+    const reminders = result.open_loop_monitor.created.length;
+    notify(`Scan #${result.run_id}: ${result.processed.length} new, ${result.skipped.length} already known, ${reminders} reminder${reminders === 1 ? "" : "s"}.`, result.errors.length > 0);
     await refresh();
   } catch (error) { notify(error.message, true); }
   finally { button.disabled = false; }

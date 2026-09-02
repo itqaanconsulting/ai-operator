@@ -16,6 +16,7 @@ from database import Database
 from document_processor import extract_document
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_text
+from inbox_automation import InboxAutomation
 from models import (
     ActionStatus,
     AnalysisResult,
@@ -49,7 +50,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.21.0")
+app = FastAPI(title="AI Commitment Operator", version="0.22.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -61,6 +62,19 @@ def _execute_contract_intake(label: str, max_messages: int, trigger: str):
             label, max_messages
         )
         result = ContractIntakeAutomation(database, EmailAnalyzer()).run(attachments)
+        result.update({"run_id": run_id, "trigger": trigger})
+        database.finish_automation_run(run_id, result)
+        return result
+    except Exception as exc:
+        database.fail_automation_run(run_id, str(exc))
+        raise
+
+
+def _execute_inbox_automation(label: str, max_results: int, trigger: str):
+    run_id = database.start_automation_run("inbox_automation")
+    try:
+        emails = GmailOperator(get_gmail_service()).list_labeled_emails(label, max_results)
+        result = InboxAutomation(database, EmailAnalyzer()).run(emails)
         result.update({"run_id": run_id, "trigger": trigger})
         database.finish_automation_run(run_id, result)
         return result
@@ -89,6 +103,7 @@ def health():
         "status": "ok",
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
+        "inbox_automation_enabled": True,
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,
         "contract_intake_automation_enabled": True,
@@ -200,6 +215,15 @@ def import_from_gmail(request: GmailImportRequest):
                     "gmail_msg_id": email.gmail_msg_id, "error": str(exc)
                 })
         return result
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/automation/inbox")
+def run_inbox_automation(request: GmailImportRequest):
+    """Analyze labeled mail and monitor open loops in one audited, read-only run."""
+    try:
+        return _execute_inbox_automation(request.label, request.max_results, "manual")
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
