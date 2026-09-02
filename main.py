@@ -17,12 +17,15 @@ from models import (
     EntityStatusBrief,
     EntityAliasRequest,
     EntityMergeRequest,
+    OpenLoopMonitorRequest,
+    CompleteCommitmentRequest,
 )
+from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.4.0")
+app = FastAPI(title="AI Commitment Operator", version="0.5.0")
 
 
 @app.on_event("startup")
@@ -64,6 +67,14 @@ def process_email(email: EmailRequest):
 @app.get("/commitments")
 def list_commitments(status: str | None = Query(default=None)):
     return {"commitments": database.list_rows("commitments", status)}
+
+
+@app.post("/commitments/{commitment_id}/complete")
+def complete_commitment(commitment_id: int, request: CompleteCommitmentRequest):
+    commitment = database.complete_commitment(commitment_id, request.note)
+    if commitment is None:
+        raise HTTPException(status_code=409, detail="Commitment does not exist or is not open")
+    return commitment
 
 
 @app.get("/actions")
@@ -195,6 +206,11 @@ def get_entity_status(entity_name: str):
         return EmailAnalyzer().create_status_brief(context)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/monitor/open-loops")
+def monitor_open_loops(request: OpenLoopMonitorRequest):
+    return OpenLoopMonitor(database).run(request.due_within_days)
 
 
 if __name__ == "__main__":

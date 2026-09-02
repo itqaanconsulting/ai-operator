@@ -167,6 +167,39 @@ The merge moves linked emails and decisions to `Carrefour`, preserves
 entity record, and writes an audit event. Review both timelines before merging;
 the API does not currently provide an automatic undo operation.
 
+## Proactive open-loop monitoring
+
+Run the monitor manually with:
+
+`POST /monitor/open-loops`
+
+```json
+{
+  "due_within_days": 3
+}
+```
+
+The monitor checks every open commitment and classifies valid ISO-8601 deadlines
+as `overdue`, `due_soon`, or not yet due. It creates a pending
+`open_loop_review` action for overdue and approaching work. Running the monitor
+again does not create duplicate reminders for the same commitment, deadline, and
+alert type. Missing and invalid deadlines are reported explicitly rather than
+guessed.
+
+Close a resolved loop with:
+
+`POST /commitments/{commitment_id}/complete`
+
+```json
+{
+  "note": "Confirmed during the client call."
+}
+```
+
+Completing a commitment records an audit event and automatically rejects any
+still-pending monitor reminder for that commitment. The monitor is currently
+triggered through the API; a scheduler can invoke the same operation later.
+
 ## Tests
 
 ```powershell
@@ -181,6 +214,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Consolidate duplicate test entities and verify alias-based status queries.
-2. Monitor open commitments and propose deadline-based follow-ups.
+1. Test open-loop monitoring with one overdue and one approaching commitment.
+2. Schedule the monitor to run periodically.
 3. Build a small dashboard for the inbox, approvals, and open loops.

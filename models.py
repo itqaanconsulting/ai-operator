@@ -76,3 +76,11 @@ class EntityAliasRequest(BaseModel):
 
 class EntityMergeRequest(BaseModel):
     source_entity: str = Field(min_length=1, max_length=300)
+
+
+class OpenLoopMonitorRequest(BaseModel):
+    due_within_days: int = Field(default=3, ge=0, le=30)
+
+
+class CompleteCommitmentRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)

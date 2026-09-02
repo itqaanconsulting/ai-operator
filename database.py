@@ -107,9 +107,19 @@ class Database:
                     decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS open_loop_alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    commitment_id INTEGER NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
+                    alert_type TEXT NOT NULL,
+                    deadline_snapshot TEXT NOT NULL,
+                    proposed_action_id INTEGER NOT NULL REFERENCES proposed_actions(id),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (commitment_id, alert_type, deadline_snapshot)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
+                CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
                 """
             )
             self._backfill_entities(connection)
@@ -432,6 +442,94 @@ class Database:
                 "SELECT * FROM entities WHERE id = ?", (target_id,)
             ).fetchone()
             return {"entity": dict(result), "merged": details}
+
+    def list_open_commitments(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT c.*, e.subject AS source_subject,
+                          GROUP_CONCAT(DISTINCT en.name) AS entity_names
+                   FROM commitments c
+                   JOIN emails e ON e.id = c.email_id
+                   LEFT JOIN email_entities ee ON ee.email_id = e.id
+                   LEFT JOIN entities en ON en.id = ee.entity_id
+                   WHERE c.status = 'open'
+                   GROUP BY c.id
+                   ORDER BY c.deadline, c.id"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def create_open_loop_alert(self, commitment: dict, alert_type: str):
+        deadline_snapshot = commitment.get("deadline") or "missing"
+        with self.connect() as connection:
+            existing = connection.execute(
+                """SELECT a.* FROM open_loop_alerts ola
+                   JOIN proposed_actions a ON a.id = ola.proposed_action_id
+                   WHERE ola.commitment_id = ? AND ola.alert_type = ?
+                         AND ola.deadline_snapshot = ?""",
+                (commitment["id"], alert_type, deadline_snapshot),
+            ).fetchone()
+            if existing:
+                return dict(existing), False
+            label = "Overdue" if alert_type == "overdue" else "Due soon"
+            entity = commitment.get("entity_names") or "unassigned entity"
+            description = (
+                f"{label} open loop for {entity}: {commitment['title']} "
+                f"(deadline: {deadline_snapshot}). Review and choose the next action."
+            )
+            payload = {
+                "monitor": "open_loop",
+                "alert_type": alert_type,
+                "deadline": commitment.get("deadline"),
+                "entity_names": commitment.get("entity_names"),
+            }
+            cursor = connection.execute(
+                """INSERT INTO proposed_actions
+                   (commitment_id, email_id, action_type, description, payload_json, status)
+                   VALUES (?, ?, 'open_loop_review', ?, ?, ?)""",
+                (commitment["id"], commitment["email_id"], description,
+                 json.dumps(payload), ActionStatus.PENDING_APPROVAL.value),
+            )
+            action_id = cursor.lastrowid
+            connection.execute(
+                """INSERT INTO open_loop_alerts
+                   (commitment_id, alert_type, deadline_snapshot, proposed_action_id)
+                   VALUES (?, ?, ?, ?)""",
+                (commitment["id"], alert_type, deadline_snapshot, action_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('commitment', ?, 'open_loop_alert_created', ?)""",
+                (commitment["id"], json.dumps({"action_id": action_id, **payload})),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM proposed_actions WHERE id = ?", (action_id,)
+            ).fetchone()), True
+
+    def complete_commitment(self, commitment_id: int, note: str | None):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE commitments SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND status = 'open'""", (commitment_id,)
+            )
+            if cursor.rowcount == 0:
+                return None
+            connection.execute(
+                """UPDATE proposed_actions
+                   SET status = ?, decision_note = ?, decided_at = CURRENT_TIMESTAMP
+                   WHERE commitment_id = ? AND action_type = 'open_loop_review'
+                         AND status = ?""",
+                (ActionStatus.REJECTED.value,
+                 f"Closed automatically when commitment completed. {note or ''}".strip(),
+                 commitment_id, ActionStatus.PENDING_APPROVAL.value),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('commitment', ?, 'completed', ?)""",
+                (commitment_id, json.dumps({"note": note})),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM commitments WHERE id = ?", (commitment_id,)
+            ).fetchone())
 
     def add_decision(self, entity_id: int, request):
         with self.connect() as connection:
