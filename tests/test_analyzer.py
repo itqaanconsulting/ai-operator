@@ -61,6 +61,20 @@ class FakeOperatorAnswerCompletions:
         )])
 
 
+class FakeOperatorPlanCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "goal": "Incorrect model goal",
+            "summary": "Review the account and prepare a follow-up.",
+            "steps": [
+                {"order": 1, "action": "Read the open commitment", "system": "operator", "action_type": "read", "requires_approval": False, "evidence_keys": ["commitments:7", "invented:1"]},
+                {"order": 2, "action": "Draft a follow-up", "system": "gmail", "action_type": "draft", "requires_approval": False, "evidence_keys": ["commitments:7"]},
+            ],
+            "risks": [], "missing_information": [], "confidence": "high",
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 class AnalyzerTest(unittest.TestCase):
     def test_status_brief_is_validated_as_structured_output(self):
         analyzer = EmailAnalyzer(client=FakeClient(), model="test-model")
@@ -96,6 +110,15 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(answer.matched_entities, ["Carrefour"])
         self.assertEqual(answer.evidence_keys, ["commitments:7"])
         self.assertEqual(answer.confidence, 0.85)
+
+    def test_operator_plan_is_grounded_and_write_steps_require_approval(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeOperatorPlanCompletions()))
+        plan = EmailAnalyzer(client=client, model="test-model").create_operator_plan(
+            "Follow up with Carrefour", {"available_evidence_keys": ["commitments:7"], "records": []}
+        )
+        self.assertEqual(plan.goal, "Follow up with Carrefour")
+        self.assertEqual(plan.steps[0].evidence_keys, ["commitments:7"])
+        self.assertTrue(plan.steps[1].requires_approval)
 
 
 if __name__ == "__main__":

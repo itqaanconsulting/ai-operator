@@ -266,15 +266,15 @@ triggered through the API; a scheduler can invoke the same operation later.
 
 ## Operator dashboard
 
-The dashboard provides a client-friendly interface for the existing controlled
-workflows:
+The default dashboard follows one email-first workflow:
 
-- View entity, commitment, approval, and overdue counts.
-- Select a company or project and generate its grounded AI status brief.
-- Review open commitments and mark completed work.
-- Approve or reject proposed actions.
-- Create a Gmail draft from an approved `draft_reply` action.
-- Run the open-loop monitor and inspect its generated reminders.
+1. Add the Gmail label `AI-Operator` to relevant messages.
+2. Click **Scan Gmail**. AI extracts tasks, deadlines, and proposed actions.
+3. Review the findings and approve or reject each proposed action.
+4. For an approved reply action, create a Gmail draft. Nothing is sent.
+
+Business context, document comparison, scheduling, and audit history remain
+available as secondary tools without interrupting this main flow.
 
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.

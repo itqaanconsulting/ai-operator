@@ -260,6 +260,15 @@ class Database:
                     briefing_json TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS operator_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    goal TEXT NOT NULL,
+                    plan_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending_approval',
+                    decision_note TEXT,
+                    decided_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -826,6 +835,41 @@ class Database:
                 "SELECT * FROM executive_briefings ORDER BY id DESC LIMIT 20"
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def save_operator_plan(self, plan):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO operator_plans (goal, plan_json) VALUES (?, ?)",
+                (plan.goal, plan.model_dump_json()),
+            )
+            row = connection.execute(
+                "SELECT * FROM operator_plans WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    def list_operator_plans(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM operator_plans ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def decide_operator_plan(self, plan_id: int, status: str, note: str | None):
+        if status not in {"approved", "rejected"}:
+            raise ValueError("Invalid operator plan decision")
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE operator_plans SET status = ?, decision_note = ?,
+                          decided_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND status = 'pending_approval'""",
+                (status, note, plan_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = connection.execute(
+                "SELECT * FROM operator_plans WHERE id = ?", (plan_id,)
+            ).fetchone()
+            return dict(row)
 
     def decide_document_comparison(self, comparison_id: int, decision: str, note: str):
         allowed = {"approved", "revision_requested", "rejected"}

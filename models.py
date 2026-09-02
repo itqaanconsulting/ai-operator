@@ -242,3 +242,30 @@ class OperatorAnswer(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
 
     _normalize_confidence = field_validator("confidence", mode="before")(normalize_confidence)
+
+
+class OperatorPlanStep(BaseModel):
+    order: int = Field(ge=1, le=20)
+    action: str = Field(min_length=1, max_length=500)
+    system: Literal["gmail", "calendar", "documents", "crm", "tasks", "operator"]
+    action_type: Literal["read", "analyze", "draft", "create", "update", "follow_up"]
+    requires_approval: bool = True
+    evidence_keys: list[str] = Field(default_factory=list)
+
+
+class OperatorPlan(BaseModel):
+    goal: str
+    summary: str
+    steps: list[OperatorPlanStep] = Field(min_length=1, max_length=20)
+    risks: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+
+    _normalize_confidence = field_validator("confidence", mode="before")(normalize_confidence)
+
+
+class OperatorPlanResult(BaseModel):
+    plan_id: int
+    status: Literal["pending_approval", "approved", "rejected"]
+    plan: OperatorPlan
+    external_action_taken: bool = False

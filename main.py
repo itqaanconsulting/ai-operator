@@ -42,13 +42,14 @@ from models import (
     ExecutiveBriefing,
     OperatorQuestion,
     OperatorAnswer,
+    OperatorPlanResult,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.20.0")
+app = FastAPI(title="AI Commitment Operator", version="0.21.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -102,6 +103,7 @@ def health():
         "prioritized_human_review_queue_enabled": True,
         "grounded_executive_briefing_enabled": True,
         "grounded_operator_questions_enabled": True,
+        "approval_gated_operator_plans_enabled": True,
         "document_human_review_required": True,
         "revision_draft_enabled": True,
         "revision_gmail_draft_enabled": True,
@@ -290,6 +292,44 @@ def ask_operator(request: OperatorQuestion):
         return EmailAnalyzer().answer_operator_question(request.question, context)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/operator/plans", response_model=OperatorPlanResult)
+def create_operator_plan(request: OperatorQuestion):
+    try:
+        context = database.operator_question_context(request.question)
+        plan = EmailAnalyzer().create_operator_plan(request.question, context)
+        saved = database.save_operator_plan(plan)
+        return OperatorPlanResult(plan_id=saved["id"], status=saved["status"], plan=plan)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/operator/plans")
+def list_operator_plans():
+    plans = database.list_operator_plans()
+    for plan in plans:
+        plan["plan"] = json.loads(plan.pop("plan_json"))
+    return {"plans": plans}
+
+
+def _decide_operator_plan(plan_id: int, status: str, decision: DecisionRequest):
+    plan = database.decide_operator_plan(plan_id, status, decision.note)
+    if plan is None:
+        raise HTTPException(status_code=409, detail="Plan does not exist or is no longer pending")
+    plan["plan"] = json.loads(plan.pop("plan_json"))
+    plan["external_action_taken"] = False
+    return plan
+
+
+@app.post("/operator/plans/{plan_id}/approve")
+def approve_operator_plan(plan_id: int, decision: DecisionRequest):
+    return _decide_operator_plan(plan_id, "approved", decision)
+
+
+@app.post("/operator/plans/{plan_id}/reject")
+def reject_operator_plan(plan_id: int, decision: DecisionRequest):
+    return _decide_operator_plan(plan_id, "rejected", decision)
 
 
 @app.get("/automation/contract-intake/schedule")

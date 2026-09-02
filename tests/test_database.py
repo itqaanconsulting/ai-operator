@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 
 from database import Database
-from models import ActionStatus, EmailAnalysis, EmailRequest, RecordDecisionRequest
+from models import (
+    ActionStatus, EmailAnalysis, EmailRequest, OperatorPlan, OperatorPlanStep,
+    RecordDecisionRequest,
+)
 
 
 class DatabaseTest(unittest.TestCase):
@@ -177,6 +180,22 @@ class DatabaseTest(unittest.TestCase):
             self.db.add_entity_alias(alpha["id"], "Beta")
         with self.assertRaisesRegex(ValueError, "same entity"):
             self.db.merge_entities(alpha["id"], "Alpha")
+
+    def test_operator_plan_requires_one_final_decision(self):
+        plan = OperatorPlan(
+            goal="Prepare a follow-up",
+            summary="Review context and draft a reply.",
+            steps=[OperatorPlanStep(
+                order=1, action="Draft reply", system="gmail", action_type="draft",
+                requires_approval=True,
+            )],
+        )
+        saved = self.db.save_operator_plan(plan)
+        approved = self.db.decide_operator_plan(saved["id"], "approved", "Looks good")
+        repeated = self.db.decide_operator_plan(saved["id"], "rejected", "Too late")
+
+        self.assertEqual(approved["status"], "approved")
+        self.assertIsNone(repeated)
 
 
 if __name__ == "__main__":

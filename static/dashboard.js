@@ -331,6 +331,44 @@ async function askOperator(event) {
   } catch (error) { elements.operatorAnswer.className = "operator-answer error"; elements.operatorAnswer.textContent = error.message; }
 }
 
+async function createOperatorPlan() {
+  const input = document.querySelector("#operator-question");
+  const question = input.value.trim(); if (!question) { input.focus(); return; }
+  elements.operatorAnswer.hidden = false;
+  elements.operatorAnswer.className = "operator-answer loading-answer";
+  elements.operatorAnswer.textContent = "Building a grounded, approval-gated plan…";
+  try {
+    const result = await api("/operator/plans", { method: "POST", body: JSON.stringify({ question }) });
+    renderOperatorPlan(result);
+  } catch (error) { elements.operatorAnswer.className = "operator-answer error"; elements.operatorAnswer.textContent = error.message; }
+}
+
+function renderOperatorPlan(result) {
+  const plan = result.plan;
+  elements.operatorAnswer.className = "operator-answer";
+  elements.operatorAnswer.innerHTML = `
+    <div class="answer-main"><strong>Proposed plan</strong><p>${escapeHtml(plan.summary)}</p>
+      <div class="card-actions">
+        ${result.status === "pending_approval" ? `<button class="button approve" data-plan-decision="approve">Approve plan</button><button class="button reject" data-plan-decision="reject">Reject</button>` : `<span class="pill ${escapeHtml(result.status)}">${escapeHtml(result.status)}</span>`}
+      </div>
+    </div>
+    <div class="answer-details">
+      <section class="status-block plan-steps"><h3>Steps</h3><ol>${plan.steps.map(step => `<li><strong>${step.order}. ${escapeHtml(step.action)}</strong><span>${escapeHtml(step.system)} · ${escapeHtml(step.action_type.replaceAll("_", " "))}${step.requires_approval ? " · approval required" : ""}</span></li>`).join("")}</ol></section>
+      ${listBlock("Risks", plan.risks)}
+      ${listBlock("Missing information", plan.missing_information)}
+    </div>`;
+  elements.operatorAnswer.querySelectorAll("[data-plan-decision]").forEach(button => button.addEventListener("click", () => decideOperatorPlan(result.plan_id, button.dataset.planDecision, result)));
+}
+
+async function decideOperatorPlan(planId, decision, result) {
+  try {
+    await api(`/operator/plans/${planId}/${decision}`, { method: "POST", body: JSON.stringify({ note: "Decision recorded in dashboard" }) });
+    result.status = decision === "approve" ? "approved" : "rejected";
+    renderOperatorPlan(result);
+    notify(`Plan ${result.status}. No external action was taken.`);
+  } catch (error) { notify(error.message, true); }
+}
+
 async function runMonitor() {
   try {
     const result = await api("/monitor/open-loops", { method: "POST", body: JSON.stringify({ due_within_days: 3 }) });
@@ -340,25 +378,20 @@ async function runMonitor() {
 }
 
 async function decideAction(id, decision) {
-  const note = window.prompt(`Optional note for ${decision}:`, "") ?? null;
-  if (note === null) return;
   try {
-    await api(`/actions/${id}/${decision}`, { method: "POST", body: JSON.stringify({ note }) });
+    await api(`/actions/${id}/${decision}`, { method: "POST", body: JSON.stringify({ note: `Decision recorded in dashboard: ${decision}` }) });
     notify(`Action ${decision === "approve" ? "approved" : "rejected"}.`); await refresh();
   } catch (error) { notify(error.message, true); }
 }
 
 async function executeAction(id) {
-  if (!window.confirm("Create a Gmail draft? The message will not be sent.")) return;
   try { await api(`/actions/${id}/execute`, { method: "POST" }); notify("Gmail draft created. Nothing was sent."); await refresh(); }
   catch (error) { notify(error.message, true); }
 }
 
 async function completeCommitment(id) {
-  const note = window.prompt("Completion note:", "") ?? null;
-  if (note === null) return;
   try {
-    await api(`/commitments/${id}/complete`, { method: "POST", body: JSON.stringify({ note }) });
+    await api(`/commitments/${id}/complete`, { method: "POST", body: JSON.stringify({ note: "Marked complete in dashboard" }) });
     notify("Commitment completed."); await refresh();
   } catch (error) { notify(error.message, true); }
 }
@@ -378,6 +411,17 @@ async function importGmailAttachments() {
     notify(`Automation #${result.run_id}: ${result.review_ready.length} ready for review, ${result.analyzed_only.length} need a reference, ${result.errors.length} errors.`, result.errors.length > 0);
     await refresh();
   } catch (error) { notify(error.message, true); }
+}
+
+async function importGmail() {
+  const button = document.querySelector("#gmail-import-button");
+  button.disabled = true;
+  try {
+    const result = await api("/gmail/import", { method: "POST", body: JSON.stringify({ label: "AI-Operator", max_results: 10 }) });
+    notify(`Scan complete: ${result.processed.length} processed, ${result.skipped.length} already known, ${result.errors.length} errors.`, result.errors.length > 0);
+    await refresh();
+  } catch (error) { notify(error.message, true); }
+  finally { button.disabled = false; }
 }
 
 function renderSchedule() {
@@ -492,6 +536,7 @@ elements.briefingButton.addEventListener("click", generateExecutiveBriefing);
 document.querySelector("#document-upload-form").addEventListener("submit", uploadDocument);
 document.querySelector("#operator-question-form").addEventListener("submit", askOperator);
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
+document.querySelector("#gmail-import-button").addEventListener("click", importGmail);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
 switchView("documents");

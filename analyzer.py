@@ -8,6 +8,7 @@ from models import (
     EntityStatusBrief, RevisionRequestDraft,
     ExecutiveBriefing,
     OperatorAnswer,
+    OperatorPlan,
 )
 
 
@@ -201,6 +202,41 @@ class EmailAnalyzer:
         answer.evidence_keys = [key for key in answer.evidence_keys if key in allowed]
         answer.matched_entities = context.get("matched_entity_names", [])
         return answer
+
+    def create_operator_plan(self, goal: str, context: dict) -> OperatorPlan:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious AI executive action planner. Build a short, executable "
+                        "plan using only the supplied records. Never claim an action was performed. "
+                        "Every draft, create, update, or follow-up step must require approval. Read "
+                        "and analysis steps may omit approval. Evidence keys must be copied exactly "
+                        "from available_evidence_keys. Return JSON with goal, summary, steps, risks, "
+                        "missing_information, and confidence. Each step has order, action, system "
+                        "(gmail, calendar, documents, crm, tasks, or operator), action_type (read, "
+                        "analyze, draft, create, update, or follow_up), requires_approval, and "
+                        "evidence_keys. Prefer 2 to 6 concrete steps."
+                    ),
+                },
+                {"role": "user", "content": json.dumps({"goal": goal, **context}, default=str)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty operator plan")
+        plan = OperatorPlan.model_validate(json.loads(content))
+        plan.goal = goal
+        allowed = set(context.get("available_evidence_keys", []))
+        for step in plan.steps:
+            step.evidence_keys = [key for key in step.evidence_keys if key in allowed]
+            if step.action_type in {"draft", "create", "update", "follow_up"}:
+                step.requires_approval = True
+        return plan
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

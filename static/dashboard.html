@@ -19,7 +19,28 @@
     .ask-operator { padding: 16px; }
     .ask-operator > div { margin-bottom: 9px; }
     .ask-operator h2 { font-size: 1rem; }
+    .plan-steps { grid-column: 1 / -1; }
+    .plan-steps ol { display: grid; gap: 8px; padding: 0; margin: 7px 0 0; list-style: none; }
+    .plan-steps li { display: grid; gap: 2px; }
+    .plan-steps li strong { color: var(--ink); font-size: .72rem; text-transform: none; }
+    .plan-steps li span { color: var(--muted); font-size: .65rem; }
+    .compact-tool { padding: 0; }
+    .compact-tool > summary { padding: 13px 16px; color: var(--ink); }
+    .compact-tool-body { padding: 0 16px 16px; }
+    .mail-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 0; margin: 0; list-style: none; }
+    .mail-flow li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .7rem; font-weight: 700; }
+    .mail-flow li:not(:last-child)::after { content: "→"; margin-left: auto; padding-right: 14px; color: #b8bfbc; }
+    .mail-flow span, .step-number { display: grid; min-width: 25px; height: 25px; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-size: .64rem; font-weight: 800; }
+    .mail-step { overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+    .mail-step.active-step { display: flex; justify-content: space-between; align-items: center; padding: 17px 18px; }
+    .step-heading { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .active-step .step-heading { padding: 0; border: 0; }
+    .step-heading h2 { margin-bottom: 3px; }
+    .step-heading p { color: var(--muted); font-size: .7rem; }
+    .advanced-tools > summary { padding: 15px 18px; color: var(--ink); font-size: .78rem; }
+    .advanced-tools-body { display: grid; gap: 12px; padding: 12px; border-top: 1px solid var(--line); background: var(--canvas); }
     @media (max-width: 850px) { .embedded-section + .embedded-section { border-left: 0; border-top: 1px solid var(--line); } }
+    @media (max-width: 650px) { .mail-flow { grid-template-columns: 1fr 1fr; gap: 9px; } .mail-flow li::after { display: none; } }
   </style>
 </head>
 <body>
@@ -36,19 +57,21 @@
   </header>
 
   <nav class="view-tabs" aria-label="Operator workspace">
-    <button class="view-tab" data-view="operations">Business operations</button>
-    <button class="view-tab active" data-view="documents">AI document automation</button>
+    <button class="view-tab active" data-view="documents">Inbox automation</button>
+    <button class="view-tab" data-view="operations">Business context</button>
   </nav>
 
   <main>
-    <section class="ask-operator" aria-label="Ask the AI operator">
-      <div><h2>Ask the operator</h2></div>
+    <details class="ask-operator compact-tool" aria-label="Ask the AI operator">
+      <summary>Ask the operator</summary>
+      <div class="compact-tool-body">
       <form id="operator-question-form">
         <input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="Ask about a company, commitment, document, or next action…" required>
         <button class="button primary" type="submit">Ask</button>
       </form>
       <div id="operator-answer" hidden></div>
-    </section>
+      </div>
+    </details>
 
     <section class="metrics" aria-label="Operator summary">
       <article><span id="entity-count">—</span><p>Entities</p></article>
@@ -92,90 +115,48 @@
           <div id="calendar-events" class="item-list"></div>
         </article>
 
-        <div class="two-column">
-          <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">Open loops</p><h2>Commitments</h2></div></div>
-            <div id="commitments" class="item-list"></div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">Human control</p><h2>Actions</h2></div></div>
-            <div id="actions" class="item-list"></div>
-          </article>
-        </div>
       </section>
     </section>
 
     <section id="documents-view" class="document-workbench app-view">
-      <details class="workflow-guide">
-        <summary>How document automation works</summary>
-        <div class="workflow-guide-content">
-          <p>AI reads and compares. You approve every external action.</p>
-          <ol class="workflow-steps" aria-label="Document automation workflow">
-            <li><span>1</span><div><strong>Intake</strong><small>Gmail or upload</small></div></li>
-            <li><span>2</span><div><strong>Baseline</strong><small>Trusted reference</small></div></li>
-            <li><span>3</span><div><strong>Compare</strong><small>Material changes</small></div></li>
-            <li><span>4</span><div><strong>Review</strong><small>Your decision</small></div></li>
-            <li><span>5</span><div><strong>Follow-up</strong><small>Approved draft</small></div></li>
-          </ol>
-        </div>
-      </details>
+      <ol class="mail-flow" aria-label="Inbox automation flow">
+        <li><span>1</span>Scan Gmail</li><li><span>2</span>AI finds work</li><li><span>3</span>You approve</li><li><span>4</span>Create draft</li>
+      </ol>
 
-      <article class="panel attention-panel">
-        <div class="panel-heading"><div><p class="step-label">Needs attention</p><h2>Review queue</h2></div></div>
-        <div id="review-queue" class="review-queue"></div>
-      </article>
+      <section class="mail-step active-step">
+        <div class="step-heading"><span class="step-number">1</span><div><h2>Scan Gmail</h2><p>Label emails <strong>AI-Operator</strong> in Gmail.</p></div></div>
+        <button id="gmail-import-button" class="button primary">Scan Gmail</button>
+      </section>
 
-      <article class="panel document-intake">
-        <div class="panel-heading">
-          <div><p class="step-label">New work</p><h2>Contract intake</h2></div>
-          <button id="gmail-attachments-button" class="button primary">Run intake</button>
-        </div>
-        <div class="secondary-options">
-          <details>
-            <summary>Upload a document manually</summary>
-            <form id="document-upload-form" class="upload-form">
-              <div><label for="document-file">PDF, DOCX, or TXT</label><input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required></div>
-              <button class="button secondary" type="submit">Analyze upload</button>
-            </form>
-          </details>
-          <details>
-            <summary>Automation schedule</summary>
-            <div class="schedule-control">
-              <div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div>
-              <div class="schedule-actions"><label for="schedule-interval">Every</label><input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes"><span>minutes</span><button id="schedule-toggle-button" class="button secondary">Configure</button></div>
+      <section class="mail-step">
+        <div class="step-heading"><span class="step-number">2</span><div><h2>AI findings</h2><p>Tasks and deadlines found in your emails.</p></div></div>
+        <div id="commitments" class="item-list"></div>
+      </section>
+
+      <section class="mail-step">
+        <div class="step-heading"><span class="step-number">3–4</span><div><h2>Review and create draft</h2><p>Approve first. Nothing is sent automatically.</p></div></div>
+        <div id="actions" class="item-list"></div>
+      </section>
+
+      <details class="advanced-tools panel">
+        <summary>Advanced tools</summary>
+        <div class="advanced-tools-body">
+          <article class="panel attention-panel">
+            <div class="panel-heading"><div><h2>Document review queue</h2></div></div>
+            <div id="review-queue" class="review-queue"></div>
+          </article>
+          <article class="panel document-intake">
+            <div class="panel-heading"><div><h2>Contract documents</h2></div><button id="gmail-attachments-button" class="button secondary">Scan attachments</button></div>
+            <div class="secondary-options">
+              <details><summary>Upload a document</summary><form id="document-upload-form" class="upload-form"><div><label for="document-file">PDF, DOCX, or TXT</label><input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required></div><button class="button secondary" type="submit">Analyze</button></form></details>
+              <details><summary>Automation schedule</summary><div class="schedule-control"><div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div><div class="schedule-actions"><label for="schedule-interval">Every</label><input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes"><span>minutes</span><button id="schedule-toggle-button" class="button secondary">Configure</button></div></div></details>
             </div>
-          </details>
+          </article>
+          <details class="panel collapsible-panel"><summary><span>Automation history</span></summary><div id="automation-runs" class="run-list"></div></details>
+          <details class="panel expandable-section"><summary><span>Documents &amp; references</span></summary><div class="document-grid embedded-grid"><section class="embedded-section"><div class="panel-heading"><h2>Documents</h2></div><div id="documents" class="item-list"></div></section><section class="embedded-section"><div class="panel-heading"><h2>Trusted references</h2></div><div id="trusted-references" class="item-list"></div></section></div></details>
+          <details class="panel expandable-section"><summary><span>Document comparisons</span></summary><div id="comparisons" class="comparison-list"></div></details>
+          <details class="panel expandable-section"><summary><span>Revision drafts</span></summary><div id="revision-drafts" class="item-list"></div></details>
         </div>
-      </article>
-
-      <details class="panel collapsible-panel">
-        <summary><span>Recent automation runs</span><small>Audit history</small></summary>
-        <div id="automation-runs" class="run-list"></div>
-      </details>
-
-      <details class="panel expandable-section">
-        <summary><span>Documents &amp; trusted references</span><small>Manage source material</small></summary>
-        <div class="document-grid embedded-grid">
-        <section class="embedded-section">
-          <div class="panel-heading"><div><h2>Documents awaiting context</h2></div></div>
-          <div id="documents" class="item-list"></div>
-        </section>
-        <section class="embedded-section">
-          <div class="panel-heading"><div><h2>Trusted references</h2></div></div>
-          <div id="trusted-references" class="item-list"></div>
-        </section>
-        </div>
-      </details>
-
-      <details class="panel expandable-section">
-        <summary><span>Document comparisons</span><small>AI findings and decisions</small></summary>
-        <div id="comparisons" class="comparison-list"></div>
-      </details>
-
-      <details class="panel expandable-section">
-        <summary><span>Revision drafts</span><small>Nothing is sent automatically</small></summary>
-        <div id="revision-drafts" class="item-list"></div>
       </details>
     </section>
   </main>
