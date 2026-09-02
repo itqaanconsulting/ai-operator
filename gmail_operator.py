@@ -91,6 +91,16 @@ class GmailOperator:
         ).execute()
         return {"provider": "gmail", "draft_id": created.get("id")}
 
+    def create_standalone_draft(self, recipient: str, subject: str, body: str):
+        draft = MIMEText(body, "plain", "utf-8")
+        draft["To"] = recipient
+        draft["Subject"] = subject
+        raw = base64.urlsafe_b64encode(draft.as_bytes()).decode("ascii")
+        created = self.service.users().drafts().create(
+            userId="me", body={"message": {"raw": raw}}
+        ).execute()
+        return {"provider": "gmail", "draft_id": created.get("id")}
+
 
 def action_reply_text(action: dict) -> str:
     payload = json.loads(action.get("payload_json") or "{}")

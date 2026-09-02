@@ -32,13 +32,14 @@ from models import (
     DocumentReviewDecisionRequest,
     RevisionRequestDraft,
     RevisionRequestDraftResult,
+    RevisionDraftApprovalRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.11.0")
+app = FastAPI(title="AI Commitment Operator", version="0.12.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -62,6 +63,7 @@ def health():
         "document_comparison_enabled": True,
         "document_human_review_required": True,
         "revision_draft_enabled": True,
+        "revision_gmail_draft_enabled": True,
     }
 
 
@@ -316,6 +318,42 @@ def create_document_revision_draft(comparison_id: int):
 @app.get("/documents/revision-drafts")
 def list_document_revision_drafts():
     return {"drafts": database.list_revision_drafts()}
+
+
+@app.post("/documents/revision-drafts/{draft_id}/approve-gmail-draft")
+def approve_revision_gmail_draft(draft_id: int, request: RevisionDraftApprovalRequest):
+    delivery, error = database.approve_revision_draft_delivery(
+        draft_id, request.recipient, request.note
+    )
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Revision request draft was not found")
+    if error == "already_approved":
+        raise HTTPException(status_code=409, detail="Gmail draft creation was already approved")
+    return {
+        "delivery": delivery,
+        "gmail_draft_created": False,
+        "message": "Recipient and draft creation approved; execute the delivery separately.",
+    }
+
+
+@app.post("/documents/revision-draft-deliveries/{delivery_id}/execute")
+def execute_revision_gmail_draft(delivery_id: int):
+    delivery = database.claim_revision_draft_delivery(delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=409, detail="Delivery is not approved or already handled")
+    try:
+        result = GmailOperator(get_gmail_service()).create_standalone_draft(
+            delivery["recipient"], delivery["subject"], delivery["body"]
+        )
+        finished = database.finish_revision_draft_delivery(delivery_id, result["draft_id"])
+        return {
+            "delivery": finished,
+            "gmail_draft_created": True,
+            "email_sent": False,
+        }
+    except Exception as exc:
+        database.fail_revision_draft_delivery(delivery_id, str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/actions/{action_id}/execute")

@@ -192,6 +192,18 @@ class Database:
                     requested_changes_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS revision_draft_deliveries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    revision_draft_id INTEGER NOT NULL UNIQUE
+                        REFERENCES document_revision_drafts(id) ON DELETE CASCADE,
+                    recipient TEXT NOT NULL,
+                    approval_note TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'approved',
+                    provider_draft_id TEXT,
+                    error_message TEXT,
+                    approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    executed_at TEXT
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -470,12 +482,82 @@ class Database:
     def list_revision_drafts(self):
         with self.connect() as connection:
             rows = connection.execute(
-                """SELECT drd.*, dc.candidate_filename, dc.reference_filename
+                """SELECT drd.*, dc.candidate_filename, dc.reference_filename,
+                          delivery.id AS delivery_id, delivery.recipient,
+                          delivery.status AS delivery_status,
+                          delivery.provider_draft_id, delivery.error_message
                    FROM document_revision_drafts drd
                    JOIN document_comparisons dc ON dc.id = drd.comparison_id
+                   LEFT JOIN revision_draft_deliveries delivery
+                       ON delivery.revision_draft_id = drd.id
                    ORDER BY drd.created_at DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def approve_revision_draft_delivery(self, draft_id: int, recipient: str, note: str):
+        with self.connect() as connection:
+            draft = connection.execute(
+                "SELECT 1 FROM document_revision_drafts WHERE id = ?", (draft_id,)
+            ).fetchone()
+            if not draft:
+                return None, "not_found"
+            try:
+                cursor = connection.execute(
+                    """INSERT INTO revision_draft_deliveries
+                       (revision_draft_id, recipient, approval_note)
+                       VALUES (?, ?, ?)""", (draft_id, recipient.strip(), note.strip())
+                )
+            except sqlite3.IntegrityError:
+                return None, "already_approved"
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('revision_draft', ?, 'gmail_draft_approved', ?)""",
+                (draft_id, json.dumps({"recipient": recipient.strip(), "note": note.strip()})),
+            )
+            row = connection.execute(
+                "SELECT * FROM revision_draft_deliveries WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), None
+
+    def claim_revision_draft_delivery(self, delivery_id: int):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE revision_draft_deliveries SET status = 'executing'
+                   WHERE id = ? AND status = 'approved'""", (delivery_id,)
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                """SELECT delivery.*, draft.subject, draft.body
+                   FROM revision_draft_deliveries delivery
+                   JOIN document_revision_drafts draft ON draft.id = delivery.revision_draft_id
+                   WHERE delivery.id = ?""", (delivery_id,)
+            ).fetchone()
+            return dict(row)
+
+    def finish_revision_draft_delivery(self, delivery_id: int, provider_draft_id: str):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE revision_draft_deliveries
+                   SET status = 'executed', provider_draft_id = ?, executed_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND status = 'executing'""", (provider_draft_id, delivery_id)
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('revision_draft_delivery', ?, 'gmail_draft_created', ?)""",
+                (delivery_id, json.dumps({"provider_draft_id": provider_draft_id})),
+            )
+            row = connection.execute(
+                "SELECT * FROM revision_draft_deliveries WHERE id = ?", (delivery_id,)
+            ).fetchone()
+            return dict(row)
+
+    def fail_revision_draft_delivery(self, delivery_id: int, error: str):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE revision_draft_deliveries SET status = 'failed', error_message = ?
+                   WHERE id = ? AND status = 'executing'""", (error[:2000], delivery_id)
+            )
 
     def email_exists(self, gmail_msg_id: str) -> bool:
         with self.connect() as connection:

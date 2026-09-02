@@ -210,6 +210,25 @@ class DocumentTest(unittest.TestCase):
         self.assertIn("termination", first["body"])
         self.assertEqual(self.db.get_revision_draft_context(stored["id"])["draft_id"], first["id"])
 
+        delivery, error = self.db.approve_revision_draft_delivery(
+            first["id"], "contracts@example.com", "Recipient and wording verified."
+        )
+        repeated, repeated_error = self.db.approve_revision_draft_delivery(
+            first["id"], "other@example.com", "Try changing recipient."
+        )
+        claimed = self.db.claim_revision_draft_delivery(delivery["id"])
+        duplicate_claim = self.db.claim_revision_draft_delivery(delivery["id"])
+        finished = self.db.finish_revision_draft_delivery(delivery["id"], "gmail-draft-1")
+
+        self.assertIsNone(error)
+        self.assertEqual(delivery["status"], "approved")
+        self.assertIsNone(repeated)
+        self.assertEqual(repeated_error, "already_approved")
+        self.assertEqual(claimed["recipient"], "contracts@example.com")
+        self.assertIsNone(duplicate_claim)
+        self.assertEqual(finished["status"], "executed")
+        self.assertEqual(finished["provider_draft_id"], "gmail-draft-1")
+
 
 if __name__ == "__main__":
     unittest.main()

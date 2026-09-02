@@ -183,3 +183,11 @@ class RevisionRequestDraftResult(BaseModel):
     draft: RevisionRequestDraft
     duplicate: bool = False
     external_action_taken: bool = False
+
+
+class RevisionDraftApprovalRequest(BaseModel):
+    recipient: str = Field(
+        min_length=5, max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    )
+    note: str = Field(min_length=1, max_length=2000)

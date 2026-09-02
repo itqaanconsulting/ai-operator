@@ -322,6 +322,24 @@ This is an internal draft only. No recipient is selected, no Gmail draft is
 created, and no message is sent. Connecting the approved text to Gmail remains a
 separate, explicitly controlled step.
 
+### Create an approved Gmail draft
+
+Approve the exact recipient for a prepared revision draft:
+
+`POST /documents/revision-drafts/{draft_id}/approve-gmail-draft`
+
+```json
+{
+  "recipient": "contracts@example.com",
+  "note": "Recipient and revision wording manually verified."
+}
+```
+
+This records approval but does not yet call Gmail. Use the returned delivery ID
+with `POST /documents/revision-draft-deliveries/{delivery_id}/execute` to create
+the Gmail draft. Atomic state transitions prevent duplicate execution. The
+operator uses Gmail's draft endpoint only; there is still no email-send endpoint.
+
 ## Tests
 
 ```powershell
@@ -338,4 +356,4 @@ a public repository or log.
 
 1. Compare one synthetic candidate contract with a trusted reference document.
 2. Record a human review decision and verify it in the entity timeline.
-3. Review the generated revision-request text before connecting it to Gmail.
+3. Approve a test recipient and verify the created message in Gmail Drafts.

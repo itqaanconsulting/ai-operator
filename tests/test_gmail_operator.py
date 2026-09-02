@@ -102,6 +102,18 @@ class GmailOperatorTest(unittest.TestCase):
         self.assertIn(b"Subject: Re: Project X", raw)
         self.assertIn(b"jane@example.com", raw)
 
+    def test_create_standalone_draft_has_recipient_and_never_sends(self):
+        result = self.operator.create_standalone_draft(
+            "contracts@example.com", "Requested revisions", "Please revise the notice period."
+        )
+
+        draft_body = self.service.users_resource.drafts_resource.body
+        raw = base64.urlsafe_b64decode(draft_body["message"]["raw"])
+        self.assertEqual(result["draft_id"], "draft-1")
+        self.assertNotIn("threadId", draft_body["message"])
+        self.assertIn(b"contracts@example.com", raw)
+        self.assertIn(b"Subject: Requested revisions", raw)
+
 
 if __name__ == "__main__":
     unittest.main()
