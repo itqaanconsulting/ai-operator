@@ -14,8 +14,8 @@
     </div>
     <div class="topbar-actions">
       <span class="safety-badge">Automatic sending off</span>
-      <button id="refresh-button" class="button secondary">Refresh</button>
-      <button id="monitor-button" class="button primary">Run open-loop monitor</button>
+      <button id="refresh-button" class="text-button">Refresh</button>
+      <button id="monitor-button" class="button primary" hidden>Run open-loop monitor</button>
     </div>
   </header>
 
@@ -116,30 +116,30 @@
       <article class="panel document-intake">
         <div class="panel-heading">
           <div><p class="step-label">Step 1 · Intake</p><h2>Bring contracts into the automation</h2><p class="heading-help">Run Gmail monitoring or upload one test document manually.</p></div>
-          <button id="gmail-attachments-button" class="button primary">Run Gmail contract automation</button>
+          <button id="gmail-attachments-button" class="button primary">Run intake</button>
         </div>
-        <form id="document-upload-form" class="upload-form">
-          <div>
-            <label for="document-file">Upload PDF, DOCX, or TXT</label>
-            <input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required>
-          </div>
-          <button class="button approve" type="submit">Analyze document</button>
-        </form>
-        <div class="schedule-control">
-          <div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div>
-          <div class="schedule-actions">
-            <label for="schedule-interval">Every</label>
-            <input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes">
-            <span>minutes</span>
-            <button id="schedule-toggle-button" class="button secondary">Configure</button>
-          </div>
+        <div class="secondary-options">
+          <details>
+            <summary>Upload a document manually</summary>
+            <form id="document-upload-form" class="upload-form">
+              <div><label for="document-file">PDF, DOCX, or TXT</label><input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required></div>
+              <button class="button secondary" type="submit">Analyze upload</button>
+            </form>
+          </details>
+          <details>
+            <summary>Automation schedule</summary>
+            <div class="schedule-control">
+              <div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div>
+              <div class="schedule-actions"><label for="schedule-interval">Every</label><input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes"><span>minutes</span><button id="schedule-toggle-button" class="button secondary">Configure</button></div>
+            </div>
+          </details>
         </div>
       </article>
 
-      <article class="panel">
-        <div class="panel-heading"><div><p class="step-label">Automation log</p><h2>What has the operator done?</h2><p class="heading-help">Every manual and scheduled run remains visible and auditable.</p></div></div>
+      <details class="panel collapsible-panel">
+        <summary><span>Recent automation runs</span><small>Audit history</small></summary>
         <div id="automation-runs" class="run-list"></div>
-      </article>
+      </details>
 
       <div class="document-grid">
         <article class="panel">
