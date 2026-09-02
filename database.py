@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from models import ActionStatus, DocumentAnalysis, EmailAnalysis
+from models import ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis
 
 
 def normalize_entity_name(name: str) -> str:
@@ -155,12 +155,30 @@ class Database:
                     entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
                     PRIMARY KEY (document_id, entity_id)
                 );
+                CREATE TABLE IF NOT EXISTS document_comparisons (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidate_filename TEXT NOT NULL,
+                    candidate_sha256 TEXT NOT NULL,
+                    reference_filename TEXT NOT NULL,
+                    reference_sha256 TEXT NOT NULL,
+                    executive_summary TEXT NOT NULL,
+                    comparison_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (candidate_sha256, reference_sha256)
+                );
+                CREATE TABLE IF NOT EXISTS document_comparison_entities (
+                    comparison_id INTEGER NOT NULL REFERENCES document_comparisons(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    PRIMARY KEY (comparison_id, entity_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
                 CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
                 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
                 CREATE INDEX IF NOT EXISTS idx_document_entities_entity ON document_entities(entity_id);
+                CREATE INDEX IF NOT EXISTS idx_comparison_entities_entity
+                    ON document_comparison_entities(entity_id);
                 """
             )
             self._backfill_entities(connection)
@@ -303,6 +321,59 @@ class Database:
                    LEFT JOIN document_entities de ON de.document_id = d.id
                    LEFT JOIN entities e ON e.id = de.entity_id
                    GROUP BY d.id ORDER BY d.created_at DESC"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def save_document_comparison(self, candidate_filename: str, candidate_sha256: str,
+                                 reference_filename: str, reference_sha256: str,
+                                 comparison: DocumentComparison):
+        with self.connect() as connection:
+            existing = connection.execute(
+                """SELECT * FROM document_comparisons
+                   WHERE candidate_sha256 = ? AND reference_sha256 = ?""",
+                (candidate_sha256, reference_sha256),
+            ).fetchone()
+            if existing:
+                linked = connection.execute(
+                    """SELECT entity_id FROM document_comparison_entities
+                       WHERE comparison_id = ? LIMIT 1""", (existing["id"],)
+                ).fetchone()
+                return dict(existing), linked["entity_id"] if linked else None, True
+            cursor = connection.execute(
+                """INSERT INTO document_comparisons
+                   (candidate_filename, candidate_sha256, reference_filename, reference_sha256,
+                    executive_summary, comparison_json) VALUES (?, ?, ?, ?, ?, ?)""",
+                (candidate_filename, candidate_sha256, reference_filename, reference_sha256,
+                 comparison.executive_summary, comparison.model_dump_json()),
+            )
+            comparison_id = cursor.lastrowid
+            entity_id = None
+            if comparison.company_or_project:
+                entity_id = self._ensure_entity(connection, comparison.company_or_project)
+                connection.execute(
+                    """INSERT INTO document_comparison_entities (comparison_id, entity_id)
+                       VALUES (?, ?)""", (comparison_id, entity_id)
+                )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document_comparison', ?, 'compared', ?)""",
+                (comparison_id, json.dumps({"entity_id": entity_id,
+                                            "candidate": candidate_filename,
+                                            "reference": reference_filename})),
+            )
+            row = connection.execute(
+                "SELECT * FROM document_comparisons WHERE id = ?", (comparison_id,)
+            ).fetchone()
+            return dict(row), entity_id, False
+
+    def list_document_comparisons(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT dc.*, GROUP_CONCAT(DISTINCT e.name) AS entity_names
+                   FROM document_comparisons dc
+                   LEFT JOIN document_comparison_entities dce ON dce.comparison_id = dc.id
+                   LEFT JOIN entities e ON e.id = dce.entity_id
+                   GROUP BY dc.id ORDER BY dc.created_at DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -514,6 +585,14 @@ class Database:
                 (target_id, source["id"]),
             )
             connection.execute("DELETE FROM document_entities WHERE entity_id = ?", (source["id"],))
+            connection.execute(
+                """INSERT OR IGNORE INTO document_comparison_entities (comparison_id, entity_id)
+                   SELECT comparison_id, ? FROM document_comparison_entities WHERE entity_id = ?""",
+                (target_id, source["id"]),
+            )
+            connection.execute(
+                "DELETE FROM document_comparison_entities WHERE entity_id = ?", (source["id"],)
+            )
             connection.execute(
                 "UPDATE decisions SET entity_id = ? WHERE entity_id = ?", (target_id, source["id"])
             )
@@ -780,6 +859,13 @@ class Database:
                    FROM documents d JOIN document_entities de ON de.document_id = d.id
                    WHERE de.entity_id = ? ORDER BY d.created_at DESC""", (entity_id,)
             ).fetchall()
+            document_comparisons = connection.execute(
+                """SELECT dc.id, dc.candidate_filename, dc.reference_filename,
+                          dc.executive_summary, dc.comparison_json, dc.created_at
+                   FROM document_comparisons dc
+                   JOIN document_comparison_entities dce ON dce.comparison_id = dc.id
+                   WHERE dce.entity_id = ? ORDER BY dc.created_at DESC""", (entity_id,)
+            ).fetchall()
             return {
                 "entity": dict(entity),
                 "emails": [dict(row) for row in emails],
@@ -788,6 +874,7 @@ class Database:
                 "decisions": [dict(row) for row in decisions],
                 "calendar_events": [dict(row) for row in calendar_events],
                 "documents": [dict(row) for row in documents],
+                "document_comparisons": [dict(row) for row in document_comparisons],
             }
 
     def entity_timeline(self, entity_id: int):
@@ -809,5 +896,8 @@ class Database:
         for document in context["documents"]:
             events.append({"type": "document", "timestamp": document["created_at"],
                            "data": document})
+        for comparison in context["document_comparisons"]:
+            events.append({"type": "document_comparison", "timestamp": comparison["created_at"],
+                           "data": comparison})
         events.sort(key=lambda event: event["timestamp"] or "", reverse=True)
         return {"entity": context["entity"], "events": events}

@@ -3,7 +3,7 @@ import os
 
 from openai import OpenAI
 
-from models import DocumentAnalysis, EmailAnalysis, EmailRequest, EntityStatusBrief
+from models import DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailRequest, EntityStatusBrief
 
 
 SYSTEM_PROMPT = """
@@ -63,6 +63,41 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty document analysis")
         return DocumentAnalysis.model_validate(json.loads(content))
+
+    def compare_documents(self, candidate_filename: str, candidate_text: str,
+                          reference_filename: str, reference_text: str) -> DocumentComparison:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious business contract comparison assistant, not a lawyer. "
+                        "Compare the candidate only against the supplied reference. Do not invent "
+                        "clauses. Distinguish absent text from ambiguous text and flag uncertainty. "
+                        "Return JSON with company_or_project, executive_summary, material_differences, "
+                        "added_terms, removed_terms, unchanged_key_terms, missing_information, "
+                        "recommendation (review, revise, approve, or reject), recommendation_reason, "
+                        "and confidence. Each material difference has topic, reference_position, "
+                        "candidate_position, significance (low, medium, or high), impact, and "
+                        "suggested_resolution. All other collection fields are arrays of short strings."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"REFERENCE: {reference_filename}\n{reference_text[:50_000]}\n\n"
+                        f"CANDIDATE: {candidate_filename}\n{candidate_text[:50_000]}"
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty document comparison")
+        return DocumentComparison.model_validate(json.loads(content))
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

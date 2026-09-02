@@ -27,13 +27,14 @@ from models import (
     CompleteCommitmentRequest,
     CalendarImportRequest,
     DocumentAnalysisResult,
+    DocumentComparisonResult,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.8.0")
+app = FastAPI(title="AI Commitment Operator", version="0.9.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -54,6 +55,7 @@ def health():
         "calendar_writes_enabled": False,
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
+        "document_comparison_enabled": True,
     }
 
 
@@ -211,6 +213,40 @@ async def analyze_document(file: UploadFile = File(...)):
 @app.get("/documents")
 def list_documents():
     return {"documents": database.list_documents()}
+
+
+@app.post("/documents/compare", response_model=DocumentComparisonResult)
+async def compare_documents(candidate: UploadFile = File(...), reference: UploadFile = File(...)):
+    """Compare a candidate document with a trusted reference; no external action is taken."""
+    try:
+        candidate_text, candidate_hash = extract_document(
+            candidate.filename or "candidate", await candidate.read()
+        )
+        reference_text, reference_hash = extract_document(
+            reference.filename or "reference", await reference.read()
+        )
+        comparison = EmailAnalyzer().compare_documents(
+            candidate.filename or "candidate", candidate_text,
+            reference.filename or "reference", reference_text,
+        )
+        stored, entity_id, duplicate = database.save_document_comparison(
+            candidate.filename or "candidate", candidate_hash,
+            reference.filename or "reference", reference_hash, comparison,
+        )
+        if duplicate:
+            comparison = type(comparison).model_validate_json(stored["comparison_json"])
+        return DocumentComparisonResult(
+            comparison_id=stored["id"], candidate_filename=stored["candidate_filename"],
+            reference_filename=stored["reference_filename"], comparison=comparison,
+            entity_id=entity_id, duplicate=duplicate,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/documents/comparisons")
+def list_document_comparisons():
+    return {"comparisons": database.list_document_comparisons()}
 
 
 @app.post("/actions/{action_id}/execute")

@@ -271,6 +271,23 @@ Uploads are limited to 10 MB and 100,000 extracted characters are sent for
 analysis. Password-protected files are unsupported. Image-only/scanned PDFs need
 OCR, which is intentionally left for a later iteration.
 
+### Compare with a trusted reference
+
+Use `POST /documents/compare` and upload two files:
+
+- `candidate`: the new agreement being reviewed.
+- `reference`: a previously approved agreement or trusted template.
+
+The AI identifies added, removed, and materially changed terms, assigns low,
+medium, or high significance, explains the likely business impact, and proposes
+a resolution. The grounded comparison is stored and added to the identified
+entity's context. Re-uploading the same candidate/reference pair returns the
+existing comparison. Inspect saved results with `GET /documents/comparisons`.
+
+The quality of the result depends on the reference document being genuinely
+trusted and relevant. The comparison remains a review aid and never signs,
+accepts, rejects, or transmits a contract.
+
 ## Tests
 
 ```powershell
@@ -285,6 +302,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Upload one synthetic test contract and inspect its structured review.
-2. Verify that the document appears in the matching entity timeline and status.
-3. Add clause comparison against a trusted reference agreement.
+1. Compare one synthetic candidate contract with a trusted reference document.
+2. Verify high-impact changes against the original source text.
+3. Add approval-gated follow-up actions for accepted recommendations.

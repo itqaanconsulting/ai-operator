@@ -34,6 +34,30 @@ class FakeCompletions:
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
+class FakeComparisonCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "company_or_project": "Carrefour",
+            "executive_summary": "The candidate changes termination and payment terms.",
+            "material_differences": [{
+                "topic": "Termination",
+                "reference_position": "Thirty days notice.",
+                "candidate_position": "Ninety days notice.",
+                "significance": "high",
+                "impact": "The exit period is three times longer.",
+                "suggested_resolution": "Restore the thirty-day notice period."
+            }],
+            "added_terms": ["Automatic renewal."],
+            "removed_terms": ["Liability cap."],
+            "unchanged_key_terms": ["One-year initial term."],
+            "missing_information": [],
+            "recommendation": "revise",
+            "recommendation_reason": "Resolve the high-impact deviations.",
+            "confidence": 0.9,
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 class DocumentTest(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -84,6 +108,30 @@ class DocumentTest(unittest.TestCase):
         context = self.db.entity_context(entity_id)
         self.assertEqual(len(context["documents"]), 1)
         self.assertIn("document", {event["type"] for event in self.db.entity_timeline(entity_id)["events"]})
+
+    def test_comparison_is_structured_linked_and_deduplicated(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeComparisonCompletions()))
+        comparison = EmailAnalyzer(client=client, model="test").compare_documents(
+            "candidate.txt", "Ninety days notice.",
+            "reference.txt", "Thirty days notice.",
+        )
+        first, entity_id, duplicate = self.db.save_document_comparison(
+            "candidate.txt", "candidate-hash", "reference.txt", "reference-hash", comparison
+        )
+        second, _, second_duplicate = self.db.save_document_comparison(
+            "renamed.txt", "candidate-hash", "reference.txt", "reference-hash", comparison
+        )
+
+        self.assertEqual(comparison.material_differences[0].significance, "high")
+        self.assertFalse(duplicate)
+        self.assertTrue(second_duplicate)
+        self.assertEqual(first["id"], second["id"])
+        context = self.db.entity_context(entity_id)
+        self.assertEqual(len(context["document_comparisons"]), 1)
+        self.assertIn(
+            "document_comparison",
+            {event["type"] for event in self.db.entity_timeline(entity_id)["events"]},
+        )
 
 
 if __name__ == "__main__":

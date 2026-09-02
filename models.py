@@ -115,3 +115,35 @@ class DocumentAnalysisResult(BaseModel):
     entity_id: int | None = None
     duplicate: bool = False
     disclaimer: str = "AI review aid only; not legal advice. Human review is required."
+
+
+class MaterialDifference(BaseModel):
+    topic: str
+    reference_position: str
+    candidate_position: str
+    significance: Literal["low", "medium", "high"]
+    impact: str
+    suggested_resolution: str
+
+
+class DocumentComparison(BaseModel):
+    company_or_project: str | None = None
+    executive_summary: str
+    material_differences: list[MaterialDifference] = Field(default_factory=list)
+    added_terms: list[str] = Field(default_factory=list)
+    removed_terms: list[str] = Field(default_factory=list)
+    unchanged_key_terms: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    recommendation: Literal["review", "revise", "approve", "reject"] = "review"
+    recommendation_reason: str
+    confidence: float = Field(default=0.5, ge=0, le=1)
+
+
+class DocumentComparisonResult(BaseModel):
+    comparison_id: int
+    candidate_filename: str
+    reference_filename: str
+    comparison: DocumentComparison
+    entity_id: int | None = None
+    duplicate: bool = False
+    disclaimer: str = "AI comparison aid only; not legal advice. Human review is required."
