@@ -12,10 +12,12 @@ die actie in een approval queue. Er wordt nooit automatisch iets extern uitgevoe
 - Ondersteunt menselijke goedkeuring of afwijzing.
 - Houdt beslissingen bij in een audit log.
 - Voorkomt dubbele opslag wanneer een Gmail message ID wordt meegegeven.
+- Importeert handmatig uitsluitend e-mails met een gekozen Gmail-label.
+- Maakt na expliciete goedkeuring een Gmail-concept in dezelfde thread.
 
-De bestaande Gmail-scripts staan nog in de repository, maar de Gmail-poller start
-niet automatisch. Daardoor kan lokaal testen geen inboxberichten als gelezen
-markeren.
+De Gmail-poller start niet automatisch. Import verandert geen labels en markeert
+geen berichten als gelezen. De operator kan alleen een concept maken; er bestaat
+geen endpoint dat e-mail verzendt.
 
 ## Installatie
 
@@ -72,6 +74,30 @@ Keur een actie goed zonder deze al uit te voeren:
 Een tweede beslissing over dezelfde actie retourneert HTTP 409. Dit voorkomt dat
 een actie per ongeluk tweemaal wordt behandeld.
 
+## Veilige Gmail-flow
+
+Maak in Gmail eerst het label `AI-Operator` aan en hang dit label alleen aan een
+testbericht. Importeer daarna maximaal tien gelabelde berichten met:
+
+`POST /gmail/import`
+
+```json
+{
+  "label": "AI-Operator",
+  "max_results": 10
+}
+```
+
+Controleer vervolgens `GET /actions?status=pending_approval` en keur de gewenste
+actie goed. Goedkeuren voert nog niets extern uit. Maak pas daarna het concept met:
+
+`POST /actions/{id}/execute`
+
+Alleen een actie van het type `draft_reply` met status `approved` en een gekoppeld
+Gmail-message-ID kan worden uitgevoerd. Het resultaat is een Gmail-draft; de mail
+wordt niet verzonden. Dubbel uitvoeren wordt door een atomaire statusovergang
+voorkomen.
+
 ## Testen
 
 ```powershell
@@ -86,7 +112,6 @@ repository heeft gestaan, trek hem dan in en maak een nieuwe aan.
 
 ## Logische volgende stappen
 
-1. Gmail-label `AI-Operator` uitlezen zonder berichten direct als gelezen te markeren.
-2. Een goedgekeurde actie als Gmail-draft uitvoeren, nooit direct verzenden.
-3. Open commitments op deadline bewaken en follow-ups voorstellen.
-4. Een klein dashboard bouwen voor inbox, approvals en open loops.
+1. De veilige Gmail-flow met één speciaal testbericht doorlopen.
+2. Open commitments op deadline bewaken en follow-ups voorstellen.
+3. Een klein dashboard bouwen voor inbox, approvals en open loops.

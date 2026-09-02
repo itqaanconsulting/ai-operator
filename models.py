@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class ActionStatus(str, Enum):
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
+    EXECUTING = "executing"
     REJECTED = "rejected"
     EXECUTED = "executed"
     FAILED = "failed"
@@ -42,3 +43,8 @@ class AnalysisResult(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class GmailImportRequest(BaseModel):
+    label: str = Field(default="AI-Operator", min_length=1, max_length=100)
+    max_results: int = Field(default=10, ge=1, le=50)

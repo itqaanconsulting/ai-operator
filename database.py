@@ -121,6 +121,12 @@ class Database:
             )
             return email_id, commitment_id, action_id
 
+    def email_exists(self, gmail_msg_id: str) -> bool:
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT 1 FROM emails WHERE gmail_msg_id = ?", (gmail_msg_id,)
+            ).fetchone() is not None
+
     def list_rows(self, table: str, status: str | None = None):
         if table not in {"commitments", "proposed_actions"}:
             raise ValueError("Unsupported table")
@@ -151,3 +157,66 @@ class Database:
             )
             row = connection.execute("SELECT * FROM proposed_actions WHERE id = ?", (action_id,)).fetchone()
             return dict(row)
+
+    def claim_approved_action(self, action_id: int):
+        """Atomically claim one approved action for external execution."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE proposed_actions SET status = ?
+                   WHERE id = ? AND status = ?""",
+                (ActionStatus.EXECUTING.value, action_id, ActionStatus.APPROVED.value),
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                """SELECT a.*, e.gmail_msg_id, e.sender, e.subject
+                   FROM proposed_actions a
+                   JOIN emails e ON e.id = a.email_id
+                   WHERE a.id = ?""",
+                (action_id,),
+            ).fetchone()
+            return dict(row)
+
+    def finish_action(self, action_id: int, external_result: dict):
+        with self.connect() as connection:
+            current = connection.execute(
+                "SELECT payload_json FROM proposed_actions WHERE id = ? AND status = ?",
+                (action_id, ActionStatus.EXECUTING.value),
+            ).fetchone()
+            if current is None:
+                return None
+            payload = json.loads(current["payload_json"] or "{}")
+            payload["external_result"] = external_result
+            cursor = connection.execute(
+                """UPDATE proposed_actions
+                   SET status = ?, executed_at = CURRENT_TIMESTAMP,
+                       payload_json = ?
+                   WHERE id = ? AND status = ?""",
+                (ActionStatus.EXECUTED.value, json.dumps(payload),
+                 action_id, ActionStatus.EXECUTING.value),
+            )
+            if cursor.rowcount == 0:
+                return None
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('action', ?, 'executed', ?)""",
+                (action_id, json.dumps(external_result)),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM proposed_actions WHERE id = ?", (action_id,)
+            ).fetchone())
+
+    def fail_action(self, action_id: int, error_message: str):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE proposed_actions
+                   SET status = ?, error_message = ?
+                   WHERE id = ? AND status = ?""",
+                (ActionStatus.FAILED.value, error_message[:2000], action_id,
+                 ActionStatus.EXECUTING.value),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('action', ?, 'failed', ?)""",
+                (action_id, json.dumps({"error": error_message[:2000]})),
+            )

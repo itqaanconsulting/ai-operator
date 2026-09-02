@@ -60,6 +60,28 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(approved["status"], "approved")
         self.assertIsNone(repeated)
 
+    def test_approved_action_can_only_be_claimed_once(self):
+        request = EmailRequest(
+            subject="Antwoord nodig", body="Kun je antwoorden?",
+            sender="jan@example.com", gmail_msg_id="gmail-2"
+        )
+        analysis = EmailAnalysis(
+            category="task", summary="Antwoord gevraagd.",
+            commitment_title="Jan antwoorden", proposed_action="Maak een antwoordconcept.",
+            suggested_reply="Hoi Jan, akkoord."
+        )
+        _, _, action_id = self.db.save_analysis(request, analysis)
+        self.db.decide_action(action_id, ActionStatus.APPROVED, None)
+
+        claimed = self.db.claim_approved_action(action_id)
+        duplicate = self.db.claim_approved_action(action_id)
+        finished = self.db.finish_action(action_id, {"draft_id": "draft-1"})
+
+        self.assertEqual(claimed["gmail_msg_id"], "gmail-2")
+        self.assertIsNone(duplicate)
+        self.assertEqual(finished["status"], "executed")
+        self.assertIn("draft-1", finished["payload_json"])
+
 
 if __name__ == "__main__":
     unittest.main()

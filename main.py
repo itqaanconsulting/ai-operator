@@ -5,7 +5,15 @@ from fastapi import FastAPI, HTTPException, Query
 
 from analyzer import EmailAnalyzer
 from database import Database
-from models import ActionStatus, AnalysisResult, DecisionRequest, EmailRequest
+from gmail_auth import get_gmail_service
+from gmail_operator import GmailOperator, action_reply_text
+from models import (
+    ActionStatus,
+    AnalysisResult,
+    DecisionRequest,
+    EmailRequest,
+    GmailImportRequest,
+)
 
 load_dotenv()
 
@@ -20,7 +28,12 @@ def startup_event():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "gmail_polling_enabled": False}
+    return {
+        "status": "ok",
+        "gmail_polling_enabled": False,
+        "gmail_manual_import_enabled": True,
+        "automatic_sending_enabled": False,
+    }
 
 
 @app.post("/analyze-email", response_model=AnalysisResult)
@@ -72,6 +85,56 @@ def approve_action(action_id: int, decision: DecisionRequest):
 @app.post("/actions/{action_id}/reject")
 def reject_action(action_id: int, decision: DecisionRequest):
     return _decide(action_id, ActionStatus.REJECTED, decision)
+
+
+@app.post("/gmail/import")
+def import_from_gmail(request: GmailImportRequest):
+    """Analyze labeled mail without changing labels, read state, or message content."""
+    try:
+        gmail = GmailOperator(get_gmail_service())
+        emails = gmail.list_labeled_emails(request.label, request.max_results)
+        result = {"found": len(emails), "processed": [], "skipped": [], "errors": []}
+        analyzer = EmailAnalyzer()
+        for email in emails:
+            if email.gmail_msg_id and database.email_exists(email.gmail_msg_id):
+                result["skipped"].append(email.gmail_msg_id)
+                continue
+            try:
+                analysis = analyzer.analyze(email)
+                email_id, commitment_id, action_id = database.save_analysis(email, analysis)
+                result["processed"].append({
+                    "gmail_msg_id": email.gmail_msg_id,
+                    "email_id": email_id,
+                    "commitment_id": commitment_id,
+                    "action_id": action_id,
+                })
+            except Exception as exc:
+                result["errors"].append({
+                    "gmail_msg_id": email.gmail_msg_id, "error": str(exc)
+                })
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/actions/{action_id}/execute")
+def execute_action(action_id: int):
+    """Execute one approved draft action. This endpoint never sends email."""
+    action = database.claim_approved_action(action_id)
+    if action is None:
+        raise HTTPException(status_code=409, detail="Action is not approved or already handled")
+    try:
+        if action["action_type"] != "draft_reply":
+            raise ValueError("Only draft_reply actions can currently be executed")
+        if not action.get("gmail_msg_id"):
+            raise ValueError("Action is not linked to a Gmail message")
+        result = GmailOperator(get_gmail_service()).create_reply_draft(
+            action["gmail_msg_id"], action_reply_text(action)
+        )
+        return database.finish_action(action_id, result)
+    except Exception as exc:
+        database.fail_action(action_id, str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":
