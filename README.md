@@ -293,6 +293,28 @@ Uploads are limited to 10 MB and 100,000 extracted characters are sent for
 analysis. Password-protected files are unsupported. Image-only/scanned PDFs need
 OCR, which is intentionally left for a later iteration.
 
+### Trusted reference library
+
+Trust is assigned only by a human. After reviewing an existing document, mark it
+as an approved baseline with `POST /documents/{document_id}/trusted-reference`:
+
+```json
+{
+  "label": "Approved Carrefour services template",
+  "note": "Approved by legal operations on 2026-09-02."
+}
+```
+
+List human-designated references with `GET /documents/trusted-references`. To
+compare an imported or uploaded document automatically, call
+`POST /documents/{document_id}/compare-with-trusted-reference`.
+
+Selection is deterministic: the reference must be active and have the same
+document type; a reference for the same entity is preferred over a global
+document-type reference. The response always exposes the selected reference ID,
+label, and selection reason. When no safe match exists, the API returns HTTP 409
+instead of guessing.
+
 ### Compare with a trusted reference
 
 Use `POST /documents/compare` and upload two files:
@@ -376,6 +398,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Import a labeled Gmail message containing a synthetic contract attachment.
-2. Add a trusted-reference library for controlled automatic comparison.
+1. Mark one reviewed contract as a trusted reference.
+2. Import a labeled Gmail contract and compare it with that reference.
 3. Show page and clause citations for every material difference.

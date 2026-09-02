@@ -29,18 +29,20 @@ from models import (
     CompleteCommitmentRequest,
     CalendarImportRequest,
     DocumentAnalysisResult,
+    DocumentComparison,
     DocumentComparisonResult,
     DocumentReviewDecisionRequest,
     RevisionRequestDraft,
     RevisionRequestDraftResult,
     RevisionDraftApprovalRequest,
+    TrustedReferenceRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.13.0")
+app = FastAPI(title="AI Commitment Operator", version="0.14.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -57,6 +59,7 @@ def health():
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
         "gmail_attachment_import_enabled": True,
+        "trusted_reference_library_enabled": True,
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": False,
@@ -270,6 +273,70 @@ def list_documents():
     return {"documents": database.list_documents()}
 
 
+@app.post("/documents/{document_id}/trusted-reference")
+def mark_document_as_trusted_reference(document_id: int, request: TrustedReferenceRequest):
+    reference, error = database.add_trusted_reference(document_id, request.label, request.note)
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Document was not found")
+    if error == "already_trusted":
+        raise HTTPException(status_code=409, detail="Document is already a trusted reference")
+    return {
+        "trusted_reference": reference,
+        "message": "Human-designated reference stored. AI did not assign trust.",
+    }
+
+
+@app.get("/documents/trusted-references")
+def list_trusted_references():
+    return {"trusted_references": database.list_trusted_references()}
+
+
+@app.post("/documents/{document_id}/compare-with-trusted-reference")
+def compare_with_trusted_reference(document_id: int):
+    candidate, reference, error = database.select_trusted_reference(document_id)
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Candidate document was not found")
+    if error == "no_match":
+        raise HTTPException(
+            status_code=409,
+            detail="No active trusted reference matches this entity and document type",
+        )
+    try:
+        stored = database.get_document_comparison_by_hashes(
+            candidate["sha256"], reference["sha256"]
+        )
+        if stored:
+            comparison = DocumentComparison.model_validate_json(stored["comparison_json"])
+            entity_id = candidate["entity_id"]
+            duplicate = True
+        else:
+            comparison = EmailAnalyzer().compare_documents(
+                candidate["filename"], candidate["extracted_text"],
+                reference["filename"], reference["extracted_text"],
+            )
+            stored, entity_id, duplicate = database.save_document_comparison(
+                candidate["filename"], candidate["sha256"],
+                reference["filename"], reference["sha256"], comparison,
+            )
+        database.link_comparison_sources(stored["id"], candidate["id"], reference["id"])
+        if duplicate:
+            comparison = type(comparison).model_validate_json(stored["comparison_json"])
+        return {
+            "comparison_id": stored["id"],
+            "candidate_document_id": candidate["id"],
+            "trusted_reference_id": reference["trusted_reference_id"],
+            "reference_document_id": reference["id"],
+            "reference_label": reference["label"],
+            "selection_reason": "same entity and document type" if reference["reference_entity_id"]
+                                == candidate["entity_id"] else "global document-type reference",
+            "comparison": comparison,
+            "entity_id": entity_id,
+            "duplicate": duplicate,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/documents/compare", response_model=DocumentComparisonResult)
 async def compare_documents(candidate: UploadFile = File(...), reference: UploadFile = File(...)):
     """Compare a candidate document with a trusted reference; no external action is taken."""
@@ -280,16 +347,20 @@ async def compare_documents(candidate: UploadFile = File(...), reference: Upload
         reference_text, reference_hash = extract_document(
             reference.filename or "reference", await reference.read()
         )
-        comparison = EmailAnalyzer().compare_documents(
-            candidate.filename or "candidate", candidate_text,
-            reference.filename or "reference", reference_text,
-        )
-        stored, entity_id, duplicate = database.save_document_comparison(
-            candidate.filename or "candidate", candidate_hash,
-            reference.filename or "reference", reference_hash, comparison,
-        )
-        if duplicate:
-            comparison = type(comparison).model_validate_json(stored["comparison_json"])
+        stored = database.get_document_comparison_by_hashes(candidate_hash, reference_hash)
+        if stored:
+            comparison = DocumentComparison.model_validate_json(stored["comparison_json"])
+            entity_id = stored.get("linked_entity_id")
+            duplicate = True
+        else:
+            comparison = EmailAnalyzer().compare_documents(
+                candidate.filename or "candidate", candidate_text,
+                reference.filename or "reference", reference_text,
+            )
+            stored, entity_id, duplicate = database.save_document_comparison(
+                candidate.filename or "candidate", candidate_hash,
+                reference.filename or "reference", reference_hash, comparison,
+            )
         return DocumentComparisonResult(
             comparison_id=stored["id"], candidate_filename=stored["candidate_filename"],
             reference_filename=stored["reference_filename"], comparison=comparison,

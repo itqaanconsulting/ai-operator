@@ -215,6 +215,22 @@ class Database:
                     imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (gmail_msg_id, attachment_id)
                 );
+                CREATE TABLE IF NOT EXISTS trusted_references (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id INTEGER NOT NULL UNIQUE REFERENCES documents(id) ON DELETE CASCADE,
+                    entity_id INTEGER REFERENCES entities(id) ON DELETE CASCADE,
+                    document_type TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS document_comparison_sources (
+                    comparison_id INTEGER PRIMARY KEY
+                        REFERENCES document_comparisons(id) ON DELETE CASCADE,
+                    candidate_document_id INTEGER NOT NULL REFERENCES documents(id),
+                    reference_document_id INTEGER NOT NULL REFERENCES documents(id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -375,6 +391,91 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_document(self, document_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT d.*, de.entity_id, e.name AS entity_name
+                   FROM documents d
+                   LEFT JOIN document_entities de ON de.document_id = d.id
+                   LEFT JOIN entities e ON e.id = de.entity_id
+                   WHERE d.id = ? LIMIT 1""", (document_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def add_trusted_reference(self, document_id: int, label: str, note: str):
+        with self.connect() as connection:
+            document = connection.execute(
+                """SELECT d.*, de.entity_id FROM documents d
+                   LEFT JOIN document_entities de ON de.document_id = d.id
+                   WHERE d.id = ? LIMIT 1""", (document_id,)
+            ).fetchone()
+            if not document:
+                return None, "not_found"
+            try:
+                cursor = connection.execute(
+                    """INSERT INTO trusted_references
+                       (document_id, entity_id, document_type, label, note)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (document_id, document["entity_id"], document["document_type"],
+                     label.strip(), note.strip()),
+                )
+            except sqlite3.IntegrityError:
+                return None, "already_trusted"
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document', ?, 'marked_trusted_reference', ?)""",
+                (document_id, json.dumps({"label": label.strip(), "note": note.strip()})),
+            )
+            row = connection.execute(
+                "SELECT * FROM trusted_references WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), None
+
+    def list_trusted_references(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT tr.*, d.filename, d.summary, e.name AS entity_name
+                   FROM trusted_references tr
+                   JOIN documents d ON d.id = tr.document_id
+                   LEFT JOIN entities e ON e.id = tr.entity_id
+                   ORDER BY tr.active DESC, tr.created_at DESC"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def select_trusted_reference(self, candidate_document_id: int):
+        with self.connect() as connection:
+            candidate = connection.execute(
+                """SELECT d.*, de.entity_id FROM documents d
+                   LEFT JOIN document_entities de ON de.document_id = d.id
+                   WHERE d.id = ? LIMIT 1""", (candidate_document_id,)
+            ).fetchone()
+            if not candidate:
+                return None, None, "not_found"
+            reference = connection.execute(
+                """SELECT tr.id AS trusted_reference_id, tr.label, tr.note,
+                          d.*, tr.entity_id AS reference_entity_id
+                   FROM trusted_references tr JOIN documents d ON d.id = tr.document_id
+                   WHERE tr.active = 1 AND tr.document_type = ? AND tr.document_id != ?
+                         AND (tr.entity_id = ? OR tr.entity_id IS NULL)
+                   ORDER BY CASE WHEN tr.entity_id = ? THEN 0 ELSE 1 END, tr.created_at DESC
+                   LIMIT 1""",
+                (candidate["document_type"], candidate_document_id,
+                 candidate["entity_id"], candidate["entity_id"]),
+            ).fetchone()
+            if not reference:
+                return dict(candidate), None, "no_match"
+            return dict(candidate), dict(reference), None
+
+    def link_comparison_sources(self, comparison_id: int, candidate_document_id: int,
+                                reference_document_id: int):
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO document_comparison_sources
+                   (comparison_id, candidate_document_id, reference_document_id)
+                   VALUES (?, ?, ?)""",
+                (comparison_id, candidate_document_id, reference_document_id),
+            )
+
     def gmail_attachment_import_exists(self, gmail_msg_id: str, attachment_id: str):
         with self.connect() as connection:
             return connection.execute(
@@ -414,7 +515,10 @@ class Database:
                                  comparison: DocumentComparison):
         with self.connect() as connection:
             existing = connection.execute(
-                """SELECT * FROM document_comparisons
+                """SELECT dc.*,
+                          (SELECT entity_id FROM document_comparison_entities
+                           WHERE comparison_id = dc.id LIMIT 1) AS linked_entity_id
+                   FROM document_comparisons dc
                    WHERE candidate_sha256 = ? AND reference_sha256 = ?""",
                 (candidate_sha256, reference_sha256),
             ).fetchone()
@@ -450,6 +554,15 @@ class Database:
                 "SELECT * FROM document_comparisons WHERE id = ?", (comparison_id,)
             ).fetchone()
             return dict(row), entity_id, False
+
+    def get_document_comparison_by_hashes(self, candidate_sha256: str, reference_sha256: str):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT * FROM document_comparisons
+                   WHERE candidate_sha256 = ? AND reference_sha256 = ?""",
+                (candidate_sha256, reference_sha256),
+            ).fetchone()
+            return dict(row) if row else None
 
     def list_document_comparisons(self):
         with self.connect() as connection:

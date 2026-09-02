@@ -196,3 +196,8 @@ class RevisionDraftApprovalRequest(BaseModel):
         pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
     )
     note: str = Field(min_length=1, max_length=2000)
+
+
+class TrustedReferenceRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=300)
+    note: str = Field(min_length=1, max_length=2000)

@@ -159,6 +159,40 @@ class DocumentTest(unittest.TestCase):
             {event["type"] for event in self.db.entity_timeline(entity_id)["events"]},
         )
 
+    def test_human_trusted_reference_is_selected_by_entity_and_type(self):
+        analysis = DocumentAnalysis(
+            document_type="contract", summary="Carrefour services agreement.",
+            company_or_project="Carrefour", recommendation="review",
+            recommendation_reason="Human review required.",
+        )
+        reference, _, _ = self.db.save_document(
+            "approved-template.txt", "text/plain", "trusted-reference-hash",
+            "Approved thirty-day notice period.", analysis,
+        )
+        candidate, _, _ = self.db.save_document(
+            "new-contract.txt", "text/plain", "trusted-candidate-hash",
+            "Proposed ninety-day notice period.", analysis,
+        )
+
+        trusted, error = self.db.add_trusted_reference(
+            reference["id"], "Approved Carrefour template", "Approved by legal operations."
+        )
+        repeated, repeated_error = self.db.add_trusted_reference(
+            reference["id"], "Duplicate", "Should not replace human designation."
+        )
+        selected_candidate, selected_reference, selection_error = (
+            self.db.select_trusted_reference(candidate["id"])
+        )
+
+        self.assertIsNone(error)
+        self.assertIsNone(selection_error)
+        self.assertEqual(trusted["document_id"], reference["id"])
+        self.assertIsNone(repeated)
+        self.assertEqual(repeated_error, "already_trusted")
+        self.assertEqual(selected_candidate["id"], candidate["id"])
+        self.assertEqual(selected_reference["id"], reference["id"])
+        self.assertEqual(len(self.db.list_trusted_references()), 1)
+
     def test_ai_confidence_labels_are_normalized(self):
         payload = {
             "executive_summary": "No material differences found.",
