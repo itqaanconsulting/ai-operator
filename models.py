@@ -164,3 +164,8 @@ class DocumentComparisonResult(BaseModel):
     entity_id: int | None = None
     duplicate: bool = False
     disclaimer: str = "AI comparison aid only; not legal advice. Human review is required."
+
+
+class DocumentReviewDecisionRequest(BaseModel):
+    decision: Literal["approved", "revision_requested", "rejected"]
+    note: str = Field(min_length=1, max_length=2000)

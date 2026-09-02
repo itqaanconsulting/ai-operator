@@ -288,6 +288,25 @@ The quality of the result depends on the reference document being genuinely
 trusted and relevant. The comparison remains a review aid and never signs,
 accepts, rejects, or transmits a contract.
 
+### Human review decision
+
+Every new comparison starts with `review_status: pending_review`. A human can
+record exactly one final decision with:
+
+`POST /documents/comparisons/{comparison_id}/decision`
+
+```json
+{
+  "decision": "revision_requested",
+  "note": "Restore the approved 30-day termination period."
+}
+```
+
+Allowed decisions are `approved`, `revision_requested`, and `rejected`. The note
+is mandatory so the business reasoning remains auditable. Repeating or changing
+a final decision returns HTTP 409. This endpoint records the decision only; it
+does not sign, modify, or send the document.
+
 ## Tests
 
 ```powershell
@@ -303,5 +322,5 @@ a public repository or log.
 ## Next steps
 
 1. Compare one synthetic candidate contract with a trusted reference document.
-2. Verify high-impact changes against the original source text.
-3. Add approval-gated follow-up actions for accepted recommendations.
+2. Record a human review decision and verify it in the entity timeline.
+3. Generate a controlled revision-request email draft after that decision.

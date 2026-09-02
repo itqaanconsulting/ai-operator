@@ -28,13 +28,14 @@ from models import (
     CalendarImportRequest,
     DocumentAnalysisResult,
     DocumentComparisonResult,
+    DocumentReviewDecisionRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.9.0")
+app = FastAPI(title="AI Commitment Operator", version="0.10.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -56,6 +57,7 @@ def health():
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
+        "document_human_review_required": True,
     }
 
 
@@ -247,6 +249,25 @@ async def compare_documents(candidate: UploadFile = File(...), reference: Upload
 @app.get("/documents/comparisons")
 def list_document_comparisons():
     return {"comparisons": database.list_document_comparisons()}
+
+
+@app.post("/documents/comparisons/{comparison_id}/decision")
+def decide_document_comparison(comparison_id: int, request: DocumentReviewDecisionRequest):
+    decision, error = database.decide_document_comparison(
+        comparison_id, request.decision, request.note
+    )
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Document comparison was not found")
+    if error == "already_decided":
+        raise HTTPException(
+            status_code=409,
+            detail="This document comparison already has a final human decision",
+        )
+    return {
+        "review": decision,
+        "external_action_taken": False,
+        "message": "Decision recorded. No document was signed, sent, or modified.",
+    }
 
 
 @app.post("/actions/{action_id}/execute")

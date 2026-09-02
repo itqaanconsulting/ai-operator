@@ -171,6 +171,16 @@ class Database:
                     entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
                     PRIMARY KEY (comparison_id, entity_id)
                 );
+                CREATE TABLE IF NOT EXISTS document_review_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comparison_id INTEGER NOT NULL UNIQUE
+                        REFERENCES document_comparisons(id) ON DELETE CASCADE,
+                    decision TEXT NOT NULL CHECK (
+                        decision IN ('approved', 'revision_requested', 'rejected')
+                    ),
+                    note TEXT NOT NULL,
+                    decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -369,13 +379,43 @@ class Database:
     def list_document_comparisons(self):
         with self.connect() as connection:
             rows = connection.execute(
-                """SELECT dc.*, GROUP_CONCAT(DISTINCT e.name) AS entity_names
+                """SELECT dc.*, GROUP_CONCAT(DISTINCT e.name) AS entity_names,
+                          COALESCE(drd.decision, 'pending_review') AS review_status,
+                          drd.note AS review_note, drd.decided_at
                    FROM document_comparisons dc
                    LEFT JOIN document_comparison_entities dce ON dce.comparison_id = dc.id
                    LEFT JOIN entities e ON e.id = dce.entity_id
+                   LEFT JOIN document_review_decisions drd ON drd.comparison_id = dc.id
                    GROUP BY dc.id ORDER BY dc.created_at DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def decide_document_comparison(self, comparison_id: int, decision: str, note: str):
+        allowed = {"approved", "revision_requested", "rejected"}
+        if decision not in allowed:
+            raise ValueError("Invalid document review decision")
+        with self.connect() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM document_comparisons WHERE id = ?", (comparison_id,)
+            ).fetchone()
+            if not exists:
+                return None, "not_found"
+            try:
+                cursor = connection.execute(
+                    """INSERT INTO document_review_decisions (comparison_id, decision, note)
+                       VALUES (?, ?, ?)""", (comparison_id, decision, note.strip())
+                )
+            except sqlite3.IntegrityError:
+                return None, "already_decided"
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document_comparison', ?, ?, ?)""",
+                (comparison_id, decision, json.dumps({"note": note.strip()})),
+            )
+            row = connection.execute(
+                "SELECT * FROM document_review_decisions WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), None
 
     def email_exists(self, gmail_msg_id: str) -> bool:
         with self.connect() as connection:
@@ -861,9 +901,12 @@ class Database:
             ).fetchall()
             document_comparisons = connection.execute(
                 """SELECT dc.id, dc.candidate_filename, dc.reference_filename,
-                          dc.executive_summary, dc.comparison_json, dc.created_at
+                          dc.executive_summary, dc.comparison_json, dc.created_at,
+                          COALESCE(drd.decision, 'pending_review') AS review_status,
+                          drd.note AS review_note, drd.decided_at
                    FROM document_comparisons dc
                    JOIN document_comparison_entities dce ON dce.comparison_id = dc.id
+                   LEFT JOIN document_review_decisions drd ON drd.comparison_id = dc.id
                    WHERE dce.entity_id = ? ORDER BY dc.created_at DESC""", (entity_id,)
             ).fetchall()
             return {

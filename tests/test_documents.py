@@ -146,6 +146,31 @@ class DocumentTest(unittest.TestCase):
 
         self.assertEqual(comparison.confidence, 0.85)
 
+    def test_comparison_human_decision_is_final_and_auditable(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeComparisonCompletions()))
+        comparison = EmailAnalyzer(client=client, model="test").compare_documents(
+            "candidate.txt", "Ninety days notice.", "reference.txt", "Thirty days notice."
+        )
+        stored, _, _ = self.db.save_document_comparison(
+            "candidate.txt", "candidate-decision-hash",
+            "reference.txt", "reference-decision-hash", comparison,
+        )
+
+        review, error = self.db.decide_document_comparison(
+            stored["id"], "revision_requested", "Restore the approved notice period."
+        )
+        repeated, repeated_error = self.db.decide_document_comparison(
+            stored["id"], "approved", "Changed my mind."
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(review["decision"], "revision_requested")
+        self.assertIsNone(repeated)
+        self.assertEqual(repeated_error, "already_decided")
+        listed = next(item for item in self.db.list_document_comparisons()
+                      if item["id"] == stored["id"])
+        self.assertEqual(listed["review_status"], "revision_requested")
+
 
 if __name__ == "__main__":
     unittest.main()
