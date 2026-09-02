@@ -63,6 +63,11 @@ class GmailImportRequest(BaseModel):
     max_results: int = Field(default=10, ge=1, le=50)
 
 
+class GmailAttachmentImportRequest(BaseModel):
+    label: str = Field(default="AI-Operator", min_length=1, max_length=100)
+    max_messages: int = Field(default=10, ge=1, le=50)
+
+
 class RecordDecisionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     decision: str = Field(min_length=1, max_length=5000)

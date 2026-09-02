@@ -29,6 +29,49 @@ class GmailOperator:
             emails.append(self._to_email_request(message))
         return emails
 
+    def list_labeled_attachments(self, label_name: str, max_messages: int):
+        label_id = self._label_id(label_name)
+        response = self.service.users().messages().list(
+            userId="me", labelIds=[label_id], maxResults=max_messages
+        ).execute()
+        attachments = []
+        for item in response.get("messages", []):
+            message = self.service.users().messages().get(
+                userId="me", id=item["id"], format="full"
+            ).execute()
+            headers = {
+                header.get("name", "").casefold(): header.get("value", "")
+                for header in message.get("payload", {}).get("headers", [])
+            }
+            for part in self._attachment_parts(message.get("payload", {})):
+                body = part.get("body", {})
+                attachment_id = body.get("attachmentId") or f"inline:{part.get('partId', '')}"
+                encoded = body.get("data")
+                if not encoded and body.get("attachmentId"):
+                    encoded = self.service.users().messages().attachments().get(
+                        userId="me", messageId=item["id"], id=body["attachmentId"]
+                    ).execute().get("data")
+                if not encoded:
+                    continue
+                attachments.append({
+                    "gmail_msg_id": item["id"],
+                    "attachment_id": attachment_id,
+                    "filename": part.get("filename") or "attachment",
+                    "mime_type": part.get("mimeType"),
+                    "subject": headers.get("subject") or "(no subject)",
+                    "sender": headers.get("from") or None,
+                    "data": self._decode_bytes(encoded),
+                })
+        return attachments
+
+    def _attachment_parts(self, part: dict):
+        found = []
+        if part.get("filename"):
+            found.append(part)
+        for child in part.get("parts", []):
+            found.extend(self._attachment_parts(child))
+        return found
+
     def _to_email_request(self, message: dict) -> EmailRequest:
         payload = message.get("payload", {})
         headers = {
@@ -60,8 +103,12 @@ class GmailOperator:
 
     @staticmethod
     def _decode(data: str) -> str:
+        return GmailOperator._decode_bytes(data).decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _decode_bytes(data: str) -> bytes:
         padding = "=" * (-len(data) % 4)
-        return base64.urlsafe_b64decode(data + padding).decode("utf-8", errors="replace")
+        return base64.urlsafe_b64decode(data + padding)
 
     def create_reply_draft(self, gmail_msg_id: str, reply_text: str):
         original = self.service.users().messages().get(

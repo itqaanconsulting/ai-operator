@@ -119,6 +119,22 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(len(context["documents"]), 1)
         self.assertIn("document", {event["type"] for event in self.db.entity_timeline(entity_id)["events"]})
 
+        attachment = {
+            "gmail_msg_id": "gmail-with-contract",
+            "attachment_id": "attachment-1",
+            "filename": "agreement.txt",
+            "subject": "New agreement",
+            "sender": "contracts@example.com",
+        }
+        linked, created = self.db.link_gmail_attachment(first["id"], attachment)
+        repeated, repeated_created = self.db.link_gmail_attachment(first["id"], attachment)
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertIsNone(repeated)
+        self.assertTrue(self.db.gmail_attachment_import_exists(
+            "gmail-with-contract", "attachment-1"
+        ))
+
     def test_comparison_is_structured_linked_and_deduplicated(self):
         client = SimpleNamespace(chat=SimpleNamespace(completions=FakeComparisonCompletions()))
         comparison = EmailAnalyzer(client=client, model="test").compare_documents(

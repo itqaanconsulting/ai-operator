@@ -20,6 +20,7 @@ from models import (
     DecisionRequest,
     EmailRequest,
     GmailImportRequest,
+    GmailAttachmentImportRequest,
     RecordDecisionRequest,
     EntityStatusBrief,
     EntityAliasRequest,
@@ -39,7 +40,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.12.0")
+app = FastAPI(title="AI Commitment Operator", version="0.13.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -55,6 +56,7 @@ def health():
         "status": "ok",
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
+        "gmail_attachment_import_enabled": True,
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": False,
@@ -156,6 +158,51 @@ def import_from_gmail(request: GmailImportRequest):
                 result["errors"].append({
                     "gmail_msg_id": email.gmail_msg_id, "error": str(exc)
                 })
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/gmail/import-attachments")
+def import_attachments_from_gmail(request: GmailAttachmentImportRequest):
+    """Import supported attachments from labeled messages without modifying Gmail."""
+    try:
+        attachments = GmailOperator(get_gmail_service()).list_labeled_attachments(
+            request.label, request.max_messages
+        )
+        result = {"found": len(attachments), "processed": [], "skipped": [], "errors": []}
+        analyzer = EmailAnalyzer()
+        for attachment in attachments:
+            key = {
+                "gmail_msg_id": attachment["gmail_msg_id"],
+                "attachment_id": attachment["attachment_id"],
+                "filename": attachment["filename"],
+            }
+            if database.gmail_attachment_import_exists(
+                attachment["gmail_msg_id"], attachment["attachment_id"]
+            ):
+                result["skipped"].append({**key, "reason": "already_imported"})
+                continue
+            try:
+                text, sha256 = extract_document(attachment["filename"], attachment["data"])
+                existing = database.get_document_by_sha256(sha256)
+                if existing:
+                    document_id = existing["id"]
+                    duplicate_document = True
+                else:
+                    analysis = analyzer.analyze_document(attachment["filename"], text)
+                    stored, _, _ = database.save_document(
+                        attachment["filename"], attachment.get("mime_type"), sha256, text, analysis
+                    )
+                    document_id = stored["id"]
+                    duplicate_document = False
+                database.link_gmail_attachment(document_id, attachment)
+                result["processed"].append({
+                    **key, "document_id": document_id,
+                    "duplicate_document": duplicate_document,
+                })
+            except Exception as exc:
+                result["errors"].append({**key, "error": str(exc)})
         return result
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

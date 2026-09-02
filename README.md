@@ -101,6 +101,28 @@ Only an approved `draft_reply` action linked to a Gmail message can be executed.
 The result is a Gmail draft, not a sent message. An atomic status transition
 prevents duplicate execution.
 
+### Import labeled document attachments
+
+Apply the `AI-Operator` label to a test email containing a PDF, DOCX, or TXT
+attachment, then call `POST /gmail/import-attachments`:
+
+```json
+{
+  "label": "AI-Operator",
+  "max_messages": 10
+}
+```
+
+The operator downloads supported attachments, extracts their text, analyzes new
+files, stores their Gmail source, and links the identified company or project to
+its context. Previously imported attachments are skipped. If the same file was
+already uploaded through another route, the existing document is reused without
+another AI call. Errors are reported per file and do not stop the batch.
+
+The importer does not alter labels, mark messages as read, delete attachments,
+or send replies. Automatic comparison waits for a trusted reference library that
+can select an appropriate baseline.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.
@@ -354,6 +376,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Compare one synthetic candidate contract with a trusted reference document.
-2. Record a human review decision and verify it in the entity timeline.
-3. Approve a test recipient and verify the created message in Gmail Drafts.
+1. Import a labeled Gmail message containing a synthetic contract attachment.
+2. Add a trusted-reference library for controlled automatic comparison.
+3. Show page and clause citations for every material difference.

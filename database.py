@@ -204,6 +204,17 @@ class Database:
                     approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     executed_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS gmail_attachment_imports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gmail_msg_id TEXT NOT NULL,
+                    attachment_id TEXT NOT NULL,
+                    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    filename TEXT NOT NULL,
+                    subject TEXT,
+                    sender TEXT,
+                    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (gmail_msg_id, attachment_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -356,6 +367,47 @@ class Database:
                    GROUP BY d.id ORDER BY d.created_at DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def get_document_by_sha256(self, sha256: str):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM documents WHERE sha256 = ?", (sha256,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def gmail_attachment_import_exists(self, gmail_msg_id: str, attachment_id: str):
+        with self.connect() as connection:
+            return connection.execute(
+                """SELECT 1 FROM gmail_attachment_imports
+                   WHERE gmail_msg_id = ? AND attachment_id = ?""",
+                (gmail_msg_id, attachment_id),
+            ).fetchone() is not None
+
+    def link_gmail_attachment(self, document_id: int, attachment: dict):
+        with self.connect() as connection:
+            try:
+                cursor = connection.execute(
+                    """INSERT INTO gmail_attachment_imports
+                       (gmail_msg_id, attachment_id, document_id, filename, subject, sender)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (attachment["gmail_msg_id"], attachment["attachment_id"], document_id,
+                     attachment["filename"], attachment.get("subject"), attachment.get("sender")),
+                )
+            except sqlite3.IntegrityError:
+                return None, False
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document', ?, 'gmail_attachment_imported', ?)""",
+                (document_id, json.dumps({
+                    "gmail_msg_id": attachment["gmail_msg_id"],
+                    "attachment_id": attachment["attachment_id"],
+                    "filename": attachment["filename"],
+                })),
+            )
+            row = connection.execute(
+                "SELECT * FROM gmail_attachment_imports WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), True
 
     def save_document_comparison(self, candidate_filename: str, candidate_sha256: str,
                                  reference_filename: str, reference_sha256: str,

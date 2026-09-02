@@ -29,6 +29,14 @@ class MessagesResource:
     def get(self, **kwargs):
         return Executable(self.message)
 
+    def attachments(self):
+        return AttachmentsResource()
+
+
+class AttachmentsResource:
+    def get(self, **kwargs):
+        return Executable({"data": base64.urlsafe_b64encode(b"Contract attachment").decode()})
+
 
 class DraftsResource:
     def __init__(self):
@@ -113,6 +121,21 @@ class GmailOperatorTest(unittest.TestCase):
         self.assertNotIn("threadId", draft_body["message"])
         self.assertIn(b"contracts@example.com", raw)
         self.assertIn(b"Subject: Requested revisions", raw)
+
+    def test_labeled_attachments_are_downloaded_without_modifying_gmail(self):
+        self.message["payload"]["parts"].append({
+            "partId": "2",
+            "filename": "agreement.txt",
+            "mimeType": "text/plain",
+            "body": {"attachmentId": "attachment-1"},
+        })
+
+        attachments = self.operator.list_labeled_attachments("AI-Operator", 5)
+
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["filename"], "agreement.txt")
+        self.assertEqual(attachments[0]["data"], b"Contract attachment")
+        self.assertEqual(attachments[0]["gmail_msg_id"], "msg-1")
 
 
 if __name__ == "__main__":
