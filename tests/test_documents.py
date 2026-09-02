@@ -133,6 +133,19 @@ class DocumentTest(unittest.TestCase):
             {event["type"] for event in self.db.entity_timeline(entity_id)["events"]},
         )
 
+    def test_ai_confidence_labels_are_normalized(self):
+        payload = {
+            "executive_summary": "No material differences found.",
+            "recommendation": "review",
+            "recommendation_reason": "Human confirmation remains required.",
+            "confidence": "high",
+        }
+
+        from models import DocumentComparison
+        comparison = DocumentComparison.model_validate(payload)
+
+        self.assertEqual(comparison.confidence, 0.85)
+
 
 if __name__ == "__main__":
     unittest.main()

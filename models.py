@@ -1,7 +1,20 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def normalize_confidence(value):
+    if isinstance(value, str):
+        label = value.strip().casefold()
+        labels = {"low": 0.25, "medium": 0.5, "high": 0.85}
+        if label in labels:
+            return labels[label]
+        try:
+            return float(label)
+        except ValueError:
+            return 0.5
+    return value
 
 
 class ActionStatus(str, Enum):
@@ -107,6 +120,8 @@ class DocumentAnalysis(BaseModel):
     recommendation_reason: str
     confidence: float = Field(default=0.5, ge=0, le=1)
 
+    _normalize_confidence = field_validator("confidence", mode="before")(normalize_confidence)
+
 
 class DocumentAnalysisResult(BaseModel):
     document_id: int
@@ -137,6 +152,8 @@ class DocumentComparison(BaseModel):
     recommendation: Literal["review", "revise", "approve", "reject"] = "review"
     recommendation_reason: str
     confidence: float = Field(default=0.5, ge=0, le=1)
+
+    _normalize_confidence = field_validator("confidence", mode="before")(normalize_confidence)
 
 
 class DocumentComparisonResult(BaseModel):
