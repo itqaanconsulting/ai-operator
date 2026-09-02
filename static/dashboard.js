@@ -1,7 +1,7 @@
 const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
-  contractSchedule: null, automationRuns: [], reviewQueue: [],
+  contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [],
 };
 
 const elements = {
@@ -225,10 +225,11 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, runs, reviewQueue] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, inboxSchedule, runs, reviewQueue] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
       api("/automation/contract-intake/schedule"),
+      api("/automation/inbox/schedule"),
       api("/automation/runs"),
       api("/automation/review-queue"),
     ]);
@@ -241,12 +242,14 @@ async function refresh() {
     state.comparisons = comparisons.comparisons;
     state.revisionDrafts = drafts.drafts;
     state.contractSchedule = schedule;
+    state.inboxSchedule = inboxSchedule;
     state.automationRuns = runs.runs;
     state.reviewQueue = reviewQueue.items;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
     renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
+    renderInboxSchedule();
     renderAutomationRuns();
     renderReviewQueue();
   } catch (error) { notify(error.message, true); }
@@ -425,6 +428,30 @@ async function importGmail() {
   finally { button.disabled = false; }
 }
 
+function renderInboxSchedule() {
+  const schedule = state.inboxSchedule;
+  if (!schedule) return;
+  const enabled = Boolean(schedule.enabled);
+  const status = schedule.last_status ? ` · last ${schedule.last_status}` : "";
+  document.querySelector("#inbox-schedule-status").textContent = enabled ? `On every ${schedule.interval_minutes} minutes${status}` : `Off${status}`;
+  const interval = document.querySelector("#inbox-schedule-interval");
+  interval.value = schedule.interval_minutes || 15;
+  interval.disabled = enabled;
+  document.querySelector("#inbox-schedule-toggle").textContent = enabled ? "Disable" : "Enable";
+}
+
+async function toggleInboxSchedule() {
+  const schedule = state.inboxSchedule;
+  let interval = schedule.interval_minutes || 15;
+  if (!schedule.enabled) interval = Number(document.querySelector("#inbox-schedule-interval").value);
+  if (!Number.isInteger(interval) || interval < 1 || interval > 1440) { notify("Enter 1 to 1440 minutes.", true); return; }
+  try {
+    await api("/automation/inbox/schedule", { method: "PUT", body: JSON.stringify({ enabled: !Boolean(schedule.enabled), interval_minutes: interval, label: "AI-Operator", max_results: 10 }) });
+    notify(schedule.enabled ? "Automatic inbox scan disabled." : "Automatic inbox scan enabled. Nothing will be sent.");
+    await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
 function renderSchedule() {
   if (!state.contractSchedule) return;
   const enabled = Boolean(state.contractSchedule.enabled);
@@ -538,6 +565,7 @@ document.querySelector("#document-upload-form").addEventListener("submit", uploa
 document.querySelector("#operator-question-form").addEventListener("submit", askOperator);
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
 document.querySelector("#gmail-import-button").addEventListener("click", importGmail);
+document.querySelector("#inbox-schedule-toggle").addEventListener("click", toggleInboxSchedule);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
 switchView("documents");

@@ -255,6 +255,20 @@ class Database:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 INSERT OR IGNORE INTO automation_schedules (id) VALUES (1);
+                CREATE TABLE IF NOT EXISTS inbox_automation_schedules (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    interval_minutes INTEGER NOT NULL DEFAULT 15,
+                    label TEXT NOT NULL DEFAULT 'AI-Operator',
+                    max_results INTEGER NOT NULL DEFAULT 10,
+                    last_started_at TEXT,
+                    last_finished_at TEXT,
+                    last_status TEXT,
+                    last_result_json TEXT,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT OR IGNORE INTO inbox_automation_schedules (id) VALUES (1);
                 CREATE TABLE IF NOT EXISTS executive_briefings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     briefing_json TEXT NOT NULL,
@@ -589,6 +603,52 @@ class Database:
             connection.execute(
                 """UPDATE automation_schedules SET last_finished_at = CURRENT_TIMESTAMP,
                    last_status = ?, last_result_json = ?, last_error = ? WHERE id = 1""",
+                (status, json.dumps(result) if result is not None else None,
+                 error[:2000] if error else None),
+            )
+
+    def get_inbox_schedule(self):
+        with self.connect() as connection:
+            return dict(connection.execute(
+                "SELECT * FROM inbox_automation_schedules WHERE id = 1"
+            ).fetchone())
+
+    def configure_inbox_schedule(self, enabled: bool, interval_minutes: int,
+                                 label: str, max_results: int):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE inbox_automation_schedules SET enabled = ?, interval_minutes = ?,
+                          label = ?, max_results = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = 1""",
+                (int(enabled), interval_minutes, label.strip(), max_results),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM inbox_automation_schedules WHERE id = 1"
+            ).fetchone())
+
+    def claim_due_inbox_schedule(self):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE inbox_automation_schedules
+                   SET last_started_at = CURRENT_TIMESTAMP, last_status = 'running',
+                       last_error = NULL
+                   WHERE id = 1 AND enabled = 1 AND COALESCE(last_status, 'idle') != 'running'
+                     AND (last_started_at IS NULL OR
+                          datetime(last_started_at, '+' || interval_minutes || ' minutes')
+                          <= CURRENT_TIMESTAMP)"""
+            )
+            if cursor.rowcount == 0:
+                return None
+            return dict(connection.execute(
+                "SELECT * FROM inbox_automation_schedules WHERE id = 1"
+            ).fetchone())
+
+    def finish_inbox_schedule(self, result: dict | None = None, error: str | None = None):
+        with self.connect() as connection:
+            status = "failed" if error else "completed"
+            connection.execute(
+                """UPDATE inbox_automation_schedules SET last_finished_at = CURRENT_TIMESTAMP,
+                          last_status = ?, last_result_json = ?, last_error = ? WHERE id = 1""",
                 (status, json.dumps(result) if result is not None else None,
                  error[:2000] if error else None),
             )

@@ -42,6 +42,17 @@ class InboxAutomationTest(unittest.TestCase):
         self.assertEqual(second["skipped"], ["m-1"])
         self.assertEqual(len(second["processed"]), 0)
 
+    def test_inbox_schedule_can_be_claimed_only_once_until_finished(self):
+        configured = self.db.configure_inbox_schedule(True, 15, "AI-Operator", 10)
+        claimed = self.db.claim_due_inbox_schedule()
+        duplicate = self.db.claim_due_inbox_schedule()
+        self.db.finish_inbox_schedule(result={"processed": []})
+
+        self.assertEqual(configured["enabled"], 1)
+        self.assertIsNotNone(claimed)
+        self.assertIsNone(duplicate)
+        self.assertEqual(self.db.get_inbox_schedule()["last_status"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()

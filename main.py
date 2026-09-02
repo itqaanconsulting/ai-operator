@@ -44,13 +44,14 @@ from models import (
     OperatorQuestion,
     OperatorAnswer,
     OperatorPlanResult,
+    InboxAutomationScheduleRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.22.0")
+app = FastAPI(title="AI Commitment Operator", version="0.23.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -83,7 +84,7 @@ def _execute_inbox_automation(label: str, max_results: int, trigger: str):
         raise
 
 
-scheduler = AutomationScheduler(database, _execute_contract_intake)
+scheduler = AutomationScheduler(database, _execute_contract_intake, _execute_inbox_automation)
 
 
 @app.on_event("startup")
@@ -104,6 +105,7 @@ def health():
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
         "inbox_automation_enabled": True,
+        "inbox_automation_scheduler_configured": bool(database.get_inbox_schedule()["enabled"]),
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,
         "contract_intake_automation_enabled": True,
@@ -226,6 +228,18 @@ def run_inbox_automation(request: GmailImportRequest):
         return _execute_inbox_automation(request.label, request.max_results, "manual")
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/automation/inbox/schedule")
+def get_inbox_automation_schedule():
+    return database.get_inbox_schedule()
+
+
+@app.put("/automation/inbox/schedule")
+def configure_inbox_automation_schedule(request: InboxAutomationScheduleRequest):
+    return database.configure_inbox_schedule(
+        request.enabled, request.interval_minutes, request.label, request.max_results
+    )
 
 
 @app.post("/gmail/import-attachments")

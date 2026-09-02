@@ -39,6 +39,11 @@
     .step-heading p { color: var(--muted); font-size: .7rem; }
     .advanced-tools > summary { padding: 15px 18px; color: var(--ink); font-size: .78rem; }
     .advanced-tools-body { display: grid; gap: 12px; padding: 12px; border-top: 1px solid var(--line); background: var(--canvas); }
+    .inbox-schedule-row { margin-top: -14px; background: #fff; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; }
+    .inbox-schedule-row > summary { padding: 10px 18px; }
+    .inbox-schedule-control { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; }
+    .inbox-schedule-control label { margin-left: auto; }
+    .inbox-schedule-control input { width: 58px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
     @media (max-width: 850px) { .embedded-section + .embedded-section { border-left: 0; border-top: 1px solid var(--line); } }
     @media (max-width: 650px) { .mail-flow { grid-template-columns: 1fr 1fr; gap: 9px; } .mail-flow li::after { display: none; } }
   </style>
@@ -127,6 +132,14 @@
         <div class="step-heading"><span class="step-number">1</span><div><h2>Scan Gmail</h2><p>Label emails <strong>AI-Operator</strong> in Gmail.</p></div></div>
         <button id="gmail-import-button" class="button primary">Scan Gmail</button>
       </section>
+      <details class="inbox-schedule-row">
+        <summary>Automatic scan</summary>
+        <div class="inbox-schedule-control">
+          <span id="inbox-schedule-status">Off</span>
+          <label>Every <input id="inbox-schedule-interval" type="number" min="1" max="1440" value="15"> minutes</label>
+          <button id="inbox-schedule-toggle" class="button secondary">Enable</button>
+        </div>
+      </details>
 
       <section class="mail-step">
         <div class="step-heading"><span class="step-number">2</span><div><h2>AI findings</h2><p>Tasks and deadlines found in your emails.</p></div></div>

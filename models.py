@@ -218,6 +218,13 @@ class ContractAutomationScheduleRequest(BaseModel):
     max_messages: int = Field(default=10, ge=1, le=50)
 
 
+class InboxAutomationScheduleRequest(BaseModel):
+    enabled: bool = False
+    interval_minutes: int = Field(default=15, ge=1, le=1440)
+    label: str = Field(default="AI-Operator", min_length=1, max_length=100)
+    max_results: int = Field(default=10, ge=1, le=50)
+
+
 class ExecutiveBriefing(BaseModel):
     headline: str
     executive_summary: str

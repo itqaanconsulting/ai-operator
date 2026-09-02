@@ -277,6 +277,9 @@ The default dashboard follows one email-first workflow:
 Business context, document comparison, scheduling, and audit history remain
 available as secondary tools without interrupting this main flow.
 
+An optional **Automatic scan** control runs the same bounded, audited inbox
+workflow on a local interval. It is disabled by default and never sends mail.
+
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.
 
