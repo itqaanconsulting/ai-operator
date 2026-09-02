@@ -51,7 +51,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.24.0")
+app = FastAPI(title="AI Commitment Operator", version="0.24.1")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 

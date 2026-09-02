@@ -44,7 +44,55 @@ class EmailAnalyzer:
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The model returned an empty analysis")
-        return EmailAnalysis.model_validate(json.loads(content))
+        return EmailAnalysis.model_validate(self._normalize_email_analysis(json.loads(content)))
+
+    @staticmethod
+    def _normalize_email_analysis(data: dict) -> dict:
+        category = str(data.get("category") or "other").strip().casefold()
+        category_aliases = {
+            "approval": "decision", "contract": "task", "finance": "task",
+            "payment": "task", "sales": "task", "customer_service": "task",
+            "customer service": "task", "operations": "task", "escalation": "task",
+        }
+        allowed_categories = {"information", "task", "meeting", "decision", "follow_up", "other"}
+        data["category"] = category if category in allowed_categories else category_aliases.get(category, "other")
+
+        scenario_text = str(data.get("scenario") or "").strip().casefold()
+        scenario_keywords = (
+            ("escalation", ("escalat", "urgent", "failure", "failing", "outage")),
+            ("finance", ("financ", "payment", "invoice", "billing")),
+            ("contract", ("contract", "agreement", "legal")),
+            ("sales", ("sales", "lead", "proposal", "commercial")),
+            ("customer_service", ("customer", "support", "complaint", "order")),
+            ("meeting", ("meeting", "call", "appointment", "review meeting")),
+            ("approval", ("approval", "approve", "decision")),
+            ("operations", ("operation", "delivery", "workflow", "launch")),
+        )
+        allowed_scenarios = {item[0] for item in scenario_keywords} | {"general"}
+        if scenario_text in allowed_scenarios:
+            data["scenario"] = scenario_text
+        else:
+            searchable = " ".join(filter(None, [scenario_text, str(data.get("summary") or ""), category]))
+            data["scenario"] = next(
+                (scenario for scenario, keywords in scenario_keywords
+                 if any(keyword in searchable for keyword in keywords)),
+                "general",
+            )
+
+        allowed_kinds = {
+            "task", "decision", "meeting", "follow_up", "payment", "contract_review",
+            "sales_lead", "customer_issue", "risk", "other",
+        }
+        kind_aliases = {
+            "approval": "decision", "contract": "contract_review", "contract review": "contract_review",
+            "sales": "sales_lead", "sales lead": "sales_lead", "customer service": "customer_issue",
+            "customer_service": "customer_issue", "invoice": "payment", "finance": "payment",
+            "follow-up": "follow_up", "follow up": "follow_up", "escalation": "risk",
+        }
+        for item in data.get("work_items") or []:
+            kind = str(item.get("kind") or "other").strip().casefold()
+            item["kind"] = kind if kind in allowed_kinds else kind_aliases.get(kind, "other")
+        return data
 
     def analyze_document(self, filename: str, text: str) -> DocumentAnalysis:
         response = self.client.chat.completions.create(
