@@ -90,12 +90,16 @@ function renderCommitments() {
 
 function renderActions() {
   const visible = state.actions.filter(action => ["pending_approval", "approved"].includes(action.status));
-  elements.actions.innerHTML = visible.length ? visible.map(action => `
+  elements.actions.innerHTML = visible.length ? visible.map(action => {
+    const payload = parseJson(action.payload_json);
+    return `
     <article class="list-card">
       <h3>${escapeHtml(action.description)}</h3>
       <div class="meta">
         <span class="pill ${escapeHtml(action.status)}">${escapeHtml(action.status.replaceAll("_", " "))}</span>
         <span>${escapeHtml(action.action_type.replaceAll("_", " "))}</span>
+        ${payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}
+        ${payload.work_item_kind ? `<span>${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : ""}
       </div>
       <div class="card-actions">
         ${action.status === "pending_approval" ? `
@@ -104,7 +108,8 @@ function renderActions() {
         ${action.status === "approved" && action.action_type === "draft_reply" ? `
           <button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
       </div>
-    </article>`).join("") : '<p class="empty-state">No actions need attention.</p>';
+    </article>`;
+  }).join("") : '<p class="empty-state">No actions need attention.</p>';
   elements.actions.querySelectorAll("[data-approve]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.approve, "approve")));
   elements.actions.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.reject, "reject")));
   elements.actions.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));

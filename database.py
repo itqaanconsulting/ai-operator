@@ -6,7 +6,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from models import (
-    ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis, RevisionRequestDraft,
+    ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailWorkItem,
+    RevisionRequestDraft,
 )
 
 
@@ -362,26 +363,41 @@ class Database:
                 )
             commitment_id = None
             action_id = None
-            if analysis.commitment_title:
-                cursor = connection.execute(
-                    """INSERT INTO commitments
-                       (email_id, title, contact_name, company_or_project, deadline, urgency)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (email_id, analysis.commitment_title, analysis.contact_name,
-                     analysis.company_or_project, analysis.deadline, analysis.urgency),
-                )
-                commitment_id = cursor.lastrowid
-            if analysis.proposed_action:
-                action_type = "draft_reply" if analysis.suggested_reply else "review"
-                cursor = connection.execute(
-                    """INSERT INTO proposed_actions
-                       (commitment_id, email_id, action_type, description, payload_json, status)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (commitment_id, email_id, action_type, analysis.proposed_action,
-                     json.dumps({"suggested_reply": analysis.suggested_reply}),
-                     ActionStatus.PENDING_APPROVAL.value),
-                )
-                action_id = cursor.lastrowid
+            work_items = list(analysis.work_items)
+            if not work_items and (analysis.commitment_title or analysis.proposed_action):
+                work_items = [EmailWorkItem(
+                    kind=analysis.category if analysis.category != "information" else "other",
+                    title=analysis.commitment_title or analysis.proposed_action,
+                    deadline=analysis.deadline,
+                    urgency=analysis.urgency,
+                    proposed_action=analysis.proposed_action,
+                    suggested_reply=analysis.suggested_reply,
+                    requires_approval=analysis.requires_approval,
+                )]
+            for item in work_items:
+                item_commitment_id = None
+                if item.title:
+                    cursor = connection.execute(
+                        """INSERT INTO commitments
+                           (email_id, title, contact_name, company_or_project, deadline, urgency)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (email_id, item.title, analysis.contact_name,
+                         analysis.company_or_project, item.deadline, item.urgency),
+                    )
+                    item_commitment_id = cursor.lastrowid
+                    commitment_id = commitment_id or item_commitment_id
+                if item.proposed_action:
+                    action_type = "draft_reply" if item.suggested_reply else "review"
+                    cursor = connection.execute(
+                        """INSERT INTO proposed_actions
+                           (commitment_id, email_id, action_type, description, payload_json, status)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (item_commitment_id, email_id, action_type, item.proposed_action,
+                         json.dumps({"suggested_reply": item.suggested_reply,
+                                     "scenario": analysis.scenario, "work_item_kind": item.kind}),
+                         ActionStatus.PENDING_APPROVAL.value),
+                    )
+                    action_id = action_id or cursor.lastrowid
             connection.execute(
                 "INSERT INTO audit_log (entity_type, entity_id, event) VALUES ('email', ?, 'analyzed')",
                 (email_id,),

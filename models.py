@@ -33,6 +33,16 @@ class EmailRequest(BaseModel):
     gmail_msg_id: str | None = None
 
 
+class EmailWorkItem(BaseModel):
+    kind: Literal["task", "decision", "meeting", "follow_up", "payment", "contract_review", "sales_lead", "customer_issue", "risk", "other"]
+    title: str = Field(min_length=1, max_length=500)
+    deadline: str | None = None
+    urgency: Literal["low", "medium", "high"] = "medium"
+    proposed_action: str | None = None
+    suggested_reply: str | None = None
+    requires_approval: bool = True
+
+
 class EmailAnalysis(BaseModel):
     category: Literal["information", "task", "meeting", "decision", "follow_up", "other"]
     summary: str
@@ -45,6 +55,11 @@ class EmailAnalysis(BaseModel):
     suggested_reply: str | None = None
     requires_approval: bool = True
     confidence: float = Field(default=0.5, ge=0, le=1)
+    scenario: Literal[
+        "general", "sales", "customer_service", "finance", "contract",
+        "meeting", "approval", "operations", "escalation",
+    ] = "general"
+    work_items: list[EmailWorkItem] = Field(default_factory=list, max_length=20)
 
 
 class AnalysisResult(BaseModel):

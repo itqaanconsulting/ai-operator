@@ -75,7 +75,29 @@ class FakeOperatorPlanCompletions:
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
+class FakeAdvancedEmailCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "category": "task", "scenario": "finance",
+            "summary": "Invoice payment and confirmation requested.",
+            "contact_name": "Jane", "company_or_project": "Carrefour", "confidence": 0.9,
+            "work_items": [
+                {"kind": "payment", "title": "Pay invoice", "deadline": "2026-09-10", "urgency": "high", "proposed_action": "Verify and schedule payment.", "suggested_reply": None, "requires_approval": True},
+                {"kind": "follow_up", "title": "Confirm payment", "deadline": None, "urgency": "medium", "proposed_action": "Draft payment confirmation.", "suggested_reply": "We will confirm after review.", "requires_approval": True},
+            ],
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 class AnalyzerTest(unittest.TestCase):
+    def test_email_analysis_recognizes_scenario_and_multiple_work_items(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeAdvancedEmailCompletions()))
+        analysis = EmailAnalyzer(client=client, model="test-model").analyze(
+            __import__("models").EmailRequest(subject="Invoice", body="Pay and confirm")
+        )
+        self.assertEqual(analysis.scenario, "finance")
+        self.assertEqual([item.kind for item in analysis.work_items], ["payment", "follow_up"])
+
     def test_status_brief_is_validated_as_structured_output(self):
         analyzer = EmailAnalyzer(client=FakeClient(), model="test-model")
         brief = analyzer.create_status_brief({"entity": {"name": "Carrefour"}})

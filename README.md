@@ -280,6 +280,11 @@ available as secondary tools without interrupting this main flow.
 An optional **Automatic scan** control runs the same bounded, audited inbox
 workflow on a local interval. It is disabled by default and never sends mail.
 
+AI triage recognizes multiple work scenarios: sales, customer service, finance,
+contracts, meetings, approvals, operations, and escalations. A single email may
+produce multiple separate work items, each with its own deadline, urgency,
+recommended action, and approval gate.
+
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.
 

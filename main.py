@@ -51,7 +51,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.23.0")
+app = FastAPI(title="AI Commitment Operator", version="0.24.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -105,6 +105,7 @@ def health():
         "gmail_polling_enabled": False,
         "gmail_manual_import_enabled": True,
         "inbox_automation_enabled": True,
+        "multi_scenario_email_recognition_enabled": True,
         "inbox_automation_scheduler_configured": bool(database.get_inbox_schedule()["enabled"]),
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,

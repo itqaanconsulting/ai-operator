@@ -4,7 +4,7 @@ from pathlib import Path
 
 from database import Database
 from models import (
-    ActionStatus, EmailAnalysis, EmailRequest, OperatorPlan, OperatorPlanStep,
+    ActionStatus, EmailAnalysis, EmailRequest, EmailWorkItem, OperatorPlan, OperatorPlanStep,
     RecordDecisionRequest,
 )
 
@@ -46,6 +46,23 @@ class DatabaseTest(unittest.TestCase):
         actions = self.db.list_rows("proposed_actions", "pending_approval")
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0]["action_type"], "draft_reply")
+
+    def test_one_email_can_create_multiple_scenario_work_items(self):
+        analysis = EmailAnalysis(
+            category="task", scenario="finance", summary="Payment and reply needed.",
+            work_items=[
+                EmailWorkItem(kind="payment", title="Pay invoice", proposed_action="Review payment"),
+                EmailWorkItem(kind="follow_up", title="Confirm payment", proposed_action="Draft confirmation", suggested_reply="Confirmed."),
+            ],
+        )
+        email_id, _, _ = self.db.save_analysis(
+            EmailRequest(subject="Invoice", body="Please pay and confirm."), analysis
+        )
+        commitments = [row for row in self.db.list_rows("commitments") if row["email_id"] == email_id]
+        actions = [row for row in self.db.list_rows("proposed_actions") if row["email_id"] == email_id]
+        self.assertEqual(len(commitments), 2)
+        self.assertEqual(len(actions), 2)
+        self.assertIn('"scenario": "finance"', actions[0]["payload_json"])
 
     def test_action_can_only_be_decided_once(self):
         request = EmailRequest(subject="Action required", body="Can you review this?")
