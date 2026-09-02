@@ -227,3 +227,18 @@ class ExecutiveBriefing(BaseModel):
     automation_health: list[str] = Field(default_factory=list)
     recommended_next_actions: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
+
+
+class OperatorQuestion(BaseModel):
+    question: str = Field(min_length=3, max_length=1000)
+
+
+class OperatorAnswer(BaseModel):
+    answer: str
+    matched_entities: list[str] = Field(default_factory=list)
+    evidence_keys: list[str] = Field(default_factory=list)
+    recommended_next_actions: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+
+    _normalize_confidence = field_validator("confidence", mode="before")(normalize_confidence)

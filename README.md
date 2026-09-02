@@ -156,6 +156,12 @@ decisions, and automation-run health. It returns priorities, urgent risks,
 recommended next actions, and missing information, then stores the briefing for
 audit/history. It summarizes records only and performs no action.
 
+`POST /operator/ask` is the central natural-language entry point. Entity names
+and aliases in the question are matched deterministically before retrieval; a
+question without an entity uses bounded global operator context. The model can
+cite only evidence keys supplied by retrieval, and unsupported keys are removed
+before returning the answer. Recommended actions remain suggestions only.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.

@@ -776,6 +776,39 @@ class Database:
             "recent_decisions": [dict(row) for row in decisions],
         }
 
+    def operator_question_context(self, question: str):
+        matches = self.match_entities(question)
+        matched_names = [item["name"] for item in matches]
+        records = []
+        evidence_keys = []
+        if matches:
+            for match in matches[:5]:
+                context = self.entity_context(match["id"])
+                for collection in (
+                    "emails", "commitments", "actions", "decisions",
+                    "calendar_events", "documents", "document_comparisons",
+                ):
+                    for row in context.get(collection, [])[:30]:
+                        key = f"{collection}:{row['id']}"
+                        evidence_keys.append(key)
+                        records.append({"source_key": key, "entity": match["name"],
+                                        "record_type": collection, "record": row})
+        else:
+            global_context = self.executive_briefing_context()
+            for collection, rows in global_context.items():
+                if not isinstance(rows, list):
+                    continue
+                for index, row in enumerate(rows[:30], start=1):
+                    record_id = row.get("id", index) if isinstance(row, dict) else index
+                    key = f"{collection}:{record_id}"
+                    evidence_keys.append(key)
+                    records.append({"source_key": key, "record_type": collection, "record": row})
+        return {
+            "matched_entity_names": matched_names,
+            "available_evidence_keys": evidence_keys,
+            "records": records,
+        }
+
     def save_executive_briefing(self, briefing):
         with self.connect() as connection:
             cursor = connection.execute(

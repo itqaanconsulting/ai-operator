@@ -7,6 +7,7 @@ from models import (
     DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailRequest,
     EntityStatusBrief, RevisionRequestDraft,
     ExecutiveBriefing,
+    OperatorAnswer,
 )
 
 
@@ -171,6 +172,35 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty executive briefing")
         return ExecutiveBriefing.model_validate(json.loads(content))
+
+    def answer_operator_question(self, question: str, context: dict) -> OperatorAnswer:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious AI executive operator. Answer the question using only "
+                        "the supplied records. If the records do not support an answer, say so and "
+                        "list the missing information. Evidence keys must be copied exactly from the "
+                        "available_evidence_keys list; never invent a key. Return JSON with answer, "
+                        "matched_entities, evidence_keys, recommended_next_actions, missing_information, "
+                        "and confidence from 0 to 1. Do not claim any recommended action was executed."
+                    ),
+                },
+                {"role": "user", "content": json.dumps({"question": question, **context}, default=str)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty operator answer")
+        answer = OperatorAnswer.model_validate(json.loads(content))
+        allowed = set(context.get("available_evidence_keys", []))
+        answer.evidence_keys = [key for key in answer.evidence_keys if key in allowed]
+        answer.matched_entities = context.get("matched_entity_names", [])
+        return answer
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

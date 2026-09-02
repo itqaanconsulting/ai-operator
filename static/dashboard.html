@@ -25,6 +25,15 @@
   </nav>
 
   <main>
+    <section class="ask-operator" aria-label="Ask the AI operator">
+      <div><p class="eyebrow">Grounded across your systems</p><h2>Ask the operator</h2><p>Try “What is the status of Carrefour?” or “What needs my attention today?”</p></div>
+      <form id="operator-question-form">
+        <input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="Ask about a company, commitment, document, or next action…" required>
+        <button class="button primary" type="submit">Ask</button>
+      </form>
+      <div id="operator-answer" hidden></div>
+    </section>
+
     <section class="metrics" aria-label="Operator summary">
       <article><span id="entity-count">—</span><p>Entities</p></article>
       <article><span id="commitment-count">—</span><p>Open commitments</p></article>

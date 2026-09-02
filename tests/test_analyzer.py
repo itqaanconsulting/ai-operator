@@ -46,6 +46,21 @@ class FakeBriefingCompletions:
         )])
 
 
+class FakeOperatorAnswerCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "answer": "Carrefour is waiting for campaign approval.",
+            "matched_entities": ["Incorrect model entity"],
+            "evidence_keys": ["commitments:7", "invented:99"],
+            "recommended_next_actions": ["Review the campaign proposal."],
+            "missing_information": ["Final budget."],
+            "confidence": "high",
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content=content)
+        )])
+
+
 class AnalyzerTest(unittest.TestCase):
     def test_status_brief_is_validated_as_structured_output(self):
         analyzer = EmailAnalyzer(client=FakeClient(), model="test-model")
@@ -67,6 +82,20 @@ class AnalyzerTest(unittest.TestCase):
 
         self.assertEqual(briefing.headline, "Two items require attention")
         self.assertEqual(briefing.recommended_next_actions, ["Record the contract decision."])
+
+    def test_operator_answer_filters_invented_evidence_keys(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeOperatorAnswerCompletions()))
+        analyzer = EmailAnalyzer(client=client, model="test-model")
+
+        answer = analyzer.answer_operator_question("What is the Carrefour status?", {
+            "matched_entity_names": ["Carrefour"],
+            "available_evidence_keys": ["commitments:7"],
+            "records": [{"source_key": "commitments:7", "record": {"title": "Approve"}}],
+        })
+
+        self.assertEqual(answer.matched_entities, ["Carrefour"])
+        self.assertEqual(answer.evidence_keys, ["commitments:7"])
+        self.assertEqual(answer.confidence, 0.85)
 
 
 if __name__ == "__main__":

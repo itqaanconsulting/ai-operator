@@ -40,13 +40,15 @@ from models import (
     TrustedReferenceRequest,
     ContractAutomationScheduleRequest,
     ExecutiveBriefing,
+    OperatorQuestion,
+    OperatorAnswer,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.19.0")
+app = FastAPI(title="AI Commitment Operator", version="0.20.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -99,6 +101,7 @@ def health():
         "document_evidence_verification_enabled": True,
         "prioritized_human_review_queue_enabled": True,
         "grounded_executive_briefing_enabled": True,
+        "grounded_operator_questions_enabled": True,
         "document_human_review_required": True,
         "revision_draft_enabled": True,
         "revision_gmail_draft_enabled": True,
@@ -278,6 +281,15 @@ def generate_executive_briefing():
 @app.get("/automation/executive-briefings")
 def list_executive_briefings():
     return {"briefings": database.list_executive_briefings()}
+
+
+@app.post("/operator/ask", response_model=OperatorAnswer)
+def ask_operator(request: OperatorQuestion):
+    try:
+        context = database.operator_question_context(request.question)
+        return EmailAnalyzer().answer_operator_question(request.question, context)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/automation/contract-intake/schedule")

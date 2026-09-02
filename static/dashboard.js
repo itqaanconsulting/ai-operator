@@ -21,6 +21,7 @@ const elements = {
   reviewQueue: document.querySelector("#review-queue"),
   briefingContent: document.querySelector("#briefing-content"),
   briefingButton: document.querySelector("#briefing-button"),
+  operatorAnswer: document.querySelector("#operator-answer"),
 };
 
 async function api(path, options = {}) {
@@ -309,6 +310,27 @@ async function generateExecutiveBriefing() {
   finally { elements.briefingButton.disabled = false; }
 }
 
+async function askOperator(event) {
+  event.preventDefault();
+  const input = document.querySelector("#operator-question");
+  const question = input.value.trim(); if (!question) return;
+  elements.operatorAnswer.hidden = false;
+  elements.operatorAnswer.className = "operator-answer loading-answer";
+  elements.operatorAnswer.textContent = "Retrieving grounded records and preparing an answer…";
+  try {
+    const result = await api("/operator/ask", { method: "POST", body: JSON.stringify({ question }) });
+    elements.operatorAnswer.className = "operator-answer";
+    elements.operatorAnswer.innerHTML = `
+      <div class="answer-main"><strong>Answer</strong><p>${escapeHtml(result.answer)}</p></div>
+      <div class="answer-details">
+        ${listBlock("Recommended next actions", result.recommended_next_actions, true)}
+        ${listBlock("Missing information", result.missing_information)}
+        <section class="status-block"><h3>Evidence</h3><p>${result.evidence_keys.length ? result.evidence_keys.map(escapeHtml).join(" · ") : "No supporting records found."}</p></section>
+        <section class="status-block"><h3>Matched entities</h3><p>${result.matched_entities.length ? result.matched_entities.map(escapeHtml).join(", ") : "Global context"}</p></section>
+      </div>`;
+  } catch (error) { elements.operatorAnswer.className = "operator-answer error"; elements.operatorAnswer.textContent = error.message; }
+}
+
 async function runMonitor() {
   try {
     const result = await api("/monitor/open-loops", { method: "POST", body: JSON.stringify({ due_within_days: 3 }) });
@@ -468,6 +490,7 @@ document.querySelector("#monitor-button").addEventListener("click", runMonitor);
 elements.statusButton.addEventListener("click", generateStatus);
 elements.briefingButton.addEventListener("click", generateExecutiveBriefing);
 document.querySelector("#document-upload-form").addEventListener("submit", uploadDocument);
+document.querySelector("#operator-question-form").addEventListener("submit", askOperator);
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));

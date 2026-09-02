@@ -106,12 +106,16 @@ class DatabaseTest(unittest.TestCase):
         ))
         context = self.db.entity_context(entity["id"])
         timeline = self.db.entity_timeline(entity["id"])
+        question_context = self.db.operator_question_context("What is the status of CARREFOUR?")
 
         self.assertEqual(decision["status"], "final")
         self.assertEqual(len(context["emails"]), 2)
         self.assertEqual(len(context["commitments"]), 2)
         self.assertEqual(len(context["decisions"]), 1)
         self.assertIn("decision", {event["type"] for event in timeline["events"]})
+        self.assertEqual(question_context["matched_entity_names"], ["Carrefour"])
+        self.assertTrue(any(key.startswith("commitments:")
+                            for key in question_context["available_evidence_keys"]))
 
     def test_decision_source_must_belong_to_entity(self):
         self.db.save_analysis(
