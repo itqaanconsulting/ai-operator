@@ -15,7 +15,7 @@ from contract_automation import ContractIntakeAutomation
 from database import Database
 from document_processor import extract_document
 from gmail_auth import get_gmail_service
-from gmail_operator import GmailOperator, action_reply_text
+from gmail_operator import GmailOperator, action_reply_subject, action_reply_text
 from inbox_automation import InboxAutomation
 from models import (
     ActionStatus,
@@ -45,13 +45,15 @@ from models import (
     OperatorAnswer,
     OperatorPlanResult,
     InboxAutomationScheduleRequest,
+    ActionDraftUpdateRequest,
+    CalendarEventProposalUpdateRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.25.0")
+app = FastAPI(title="AI Commitment Operator", version="0.26.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -74,8 +76,13 @@ def _execute_contract_intake(label: str, max_messages: int, trigger: str):
 def _execute_inbox_automation(label: str, max_results: int, trigger: str):
     run_id = database.start_automation_run("inbox_automation")
     try:
-        emails = GmailOperator(get_gmail_service()).list_labeled_emails(label, max_results)
-        result = InboxAutomation(database, EmailAnalyzer()).run(emails)
+        gmail = GmailOperator(get_gmail_service())
+        analyzer = EmailAnalyzer()
+        emails = gmail.list_labeled_emails(label, max_results)
+        attachments = gmail.list_labeled_attachments(label, max_results)
+        result = InboxAutomation(
+            database, analyzer, ContractIntakeAutomation(database, analyzer)
+        ).run(emails, attachments=attachments)
         result.update({"run_id": run_id, "trigger": trigger})
         database.finish_automation_run(run_id, result)
         return result
@@ -106,6 +113,7 @@ def health():
         "gmail_manual_import_enabled": True,
         "inbox_automation_enabled": True,
         "multi_scenario_email_recognition_enabled": True,
+        "inbox_attachment_routing_enabled": True,
         "inbox_automation_scheduler_configured": bool(database.get_inbox_schedule()["enabled"]),
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,
@@ -113,7 +121,8 @@ def health():
         "contract_intake_scheduler_configured": bool(database.get_contract_schedule()["enabled"]),
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
-        "calendar_writes_enabled": False,
+        "calendar_writes_enabled": True,
+        "calendar_write_requires_action_approval": True,
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
@@ -190,6 +199,27 @@ def approve_action(action_id: int, decision: DecisionRequest):
 @app.post("/actions/{action_id}/reject")
 def reject_action(action_id: int, decision: DecisionRequest):
     return _decide(action_id, ActionStatus.REJECTED, decision)
+
+
+@app.put("/actions/{action_id}/draft")
+def update_action_draft(action_id: int, request: ActionDraftUpdateRequest):
+    action = database.update_action_payload(
+        action_id, {"draft_subject": request.subject, "suggested_reply": request.body},
+        {"draft_reply"},
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable draft action was not found")
+    return action
+
+
+@app.put("/actions/{action_id}/calendar-proposal")
+def update_calendar_proposal(action_id: int, request: CalendarEventProposalUpdateRequest):
+    action = database.update_action_payload(
+        action_id, {"calendar_event": request.model_dump()}, {"calendar_event"},
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable Calendar proposal was not found")
+    return action
 
 
 @app.post("/gmail/import")
@@ -658,13 +688,20 @@ def execute_action(action_id: int):
     if action is None:
         raise HTTPException(status_code=409, detail="Action is not approved or already handled")
     try:
-        if action["action_type"] != "draft_reply":
-            raise ValueError("Only draft_reply actions can currently be executed")
-        if not action.get("gmail_msg_id"):
-            raise ValueError("Action is not linked to a Gmail message")
-        result = GmailOperator(get_gmail_service()).create_reply_draft(
-            action["gmail_msg_id"], action_reply_text(action)
-        )
+        if action["action_type"] == "draft_reply":
+            if not action.get("gmail_msg_id"):
+                raise ValueError("Action is not linked to a Gmail message")
+            result = GmailOperator(get_gmail_service()).create_reply_draft(
+                action["gmail_msg_id"], action_reply_text(action), action_reply_subject(action)
+            )
+        elif action["action_type"] == "calendar_event":
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = CalendarEventProposalUpdateRequest.model_validate(
+                payload.get("calendar_event") or {}
+            )
+            result = CalendarOperator(get_calendar_service()).create_event(proposal.model_dump())
+        else:
+            raise ValueError("This approved action has no external executor")
         return database.finish_action(action_id, result)
     except Exception as exc:
         database.fail_action(action_id, str(exc))

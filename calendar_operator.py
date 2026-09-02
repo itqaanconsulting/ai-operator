@@ -28,6 +28,22 @@ class CalendarOperator:
         ).execute()
         return [self._normalize_event(event, calendar_id) for event in response.get("items", [])]
 
+    def create_event(self, proposal: dict, calendar_id: str = "primary"):
+        body = {
+            "summary": proposal["title"],
+            "start": {"dateTime": proposal["start_at"]},
+            "end": {"dateTime": proposal["end_at"]},
+        }
+        if proposal.get("location"):
+            body["location"] = proposal["location"]
+        if proposal.get("attendees"):
+            body["attendees"] = [{"email": email} for email in proposal["attendees"]]
+        created = self.service.events().insert(
+            calendarId=calendar_id, body=body, sendUpdates="none"
+        ).execute()
+        return {"provider": "google_calendar", "event_id": created.get("id"),
+                "html_link": created.get("htmlLink"), "attendee_updates_sent": False}
+
     @staticmethod
     def _normalize_event(event: dict, calendar_id: str):
         start = event.get("start", {})

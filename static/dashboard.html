@@ -53,6 +53,13 @@
     .proposed-action { margin-top: 9px; padding: 9px 11px; background: var(--soft); border-radius: 7px; }
     .proposed-action span { color: var(--primary); font-size: .6rem; font-weight: 800; text-transform: uppercase; }
     .proposed-action p { margin-top: 3px; font-size: .73rem; }
+    .draft-editor { margin-top: 9px; border: 1px solid var(--line); border-radius: 7px; }
+    .draft-editor > summary { padding: 9px 11px; color: var(--ink); }
+    .draft-editor-body { display: grid; gap: 7px; padding: 10px; border-top: 1px solid var(--line); }
+    .draft-editor input, .draft-editor textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: .72rem; }
+    .draft-editor textarea { min-height: 110px; resize: vertical; }
+    .calendar-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .calendar-editor-grid .wide { grid-column: 1 / -1; }
     @media (max-width: 850px) { .embedded-section + .embedded-section { border-left: 0; border-top: 1px solid var(--line); } }
     @media (max-width: 650px) { .mail-flow { grid-template-columns: 1fr 1fr; gap: 9px; } .mail-flow li::after { display: none; } }
   </style>

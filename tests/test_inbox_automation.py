@@ -21,6 +21,15 @@ class FakeAnalyzer:
         )
 
 
+class FakeDocumentAutomation:
+    def __init__(self):
+        self.attachments = None
+
+    def run(self, attachments):
+        self.attachments = attachments
+        return {"review_ready": [], "analyzed_only": [{"document_id": 1}], "errors": []}
+
+
 class InboxAutomationTest(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -52,6 +61,14 @@ class InboxAutomationTest(unittest.TestCase):
         self.assertIsNotNone(claimed)
         self.assertIsNone(duplicate)
         self.assertEqual(self.db.get_inbox_schedule()["last_status"], "completed")
+
+    def test_run_routes_attachments_to_document_automation(self):
+        documents = FakeDocumentAutomation()
+        result = InboxAutomation(self.db, FakeAnalyzer(), documents).run(
+            [], attachments=[{"filename": "agreement.txt"}]
+        )
+        self.assertEqual(documents.attachments[0]["filename"], "agreement.txt")
+        self.assertEqual(result["document_automation"]["analyzed_only"][0]["document_id"], 1)
 
 
 if __name__ == "__main__":

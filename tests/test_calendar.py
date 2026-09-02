@@ -21,10 +21,15 @@ class EventsResource:
     def __init__(self, items):
         self.items = items
         self.kwargs = None
+        self.insert_kwargs = None
 
     def list(self, **kwargs):
         self.kwargs = kwargs
         return Executable({"items": self.items})
+
+    def insert(self, **kwargs):
+        self.insert_kwargs = kwargs
+        return Executable({"id": "created-1", "htmlLink": "https://calendar.google.com/created-1"})
 
 
 class FakeCalendarService:
@@ -71,6 +76,17 @@ class CalendarOperatorTest(unittest.TestCase):
 
         self.assertTrue(event["all_day"])
         self.assertEqual(event["start_at"], "2026-09-04")
+
+    def test_create_event_never_sends_attendee_updates(self):
+        service = FakeCalendarService([])
+        result = CalendarOperator(service).create_event({
+            "title": "Carrefour review", "start_at": "2026-09-18T10:00:00+02:00",
+            "end_at": "2026-09-18T10:30:00+02:00", "location": "Online",
+            "attendees": ["jane@example.com"],
+        })
+        self.assertEqual(result["event_id"], "created-1")
+        self.assertEqual(service.resource.insert_kwargs["sendUpdates"], "none")
+        self.assertEqual(service.resource.insert_kwargs["body"]["attendees"][0]["email"], "jane@example.com")
 
 
 class CalendarDatabaseTest(unittest.TestCase):

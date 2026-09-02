@@ -3,7 +3,7 @@ import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from models import (
     ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailWorkItem,
@@ -309,7 +309,45 @@ class Database:
                            AND primary_action.status IN ('pending_approval', 'approved')
                      )"""
             )
+            connection.execute(
+                """UPDATE proposed_actions SET status = 'rejected',
+                          decision_note = 'Closed because the linked work item is complete.',
+                          decided_at = CURRENT_TIMESTAMP
+                   WHERE status = 'pending_approval' AND commitment_id IN (
+                       SELECT id FROM commitments WHERE status = 'completed'
+                   )"""
+            )
             self._backfill_entities(connection)
+            self._backfill_calendar_proposals(connection)
+
+    @staticmethod
+    def _backfill_calendar_proposals(connection):
+        rows = connection.execute(
+            """SELECT a.id, a.payload_json, c.title, c.deadline
+               FROM proposed_actions a JOIN commitments c ON c.id = a.commitment_id
+               WHERE a.action_type IN ('review', 'draft_reply')
+                 AND a.status IN ('pending_approval', 'approved')"""
+        ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload_json"] or "{}")
+            if payload.get("work_item_kind") != "meeting" or not row["deadline"]:
+                continue
+            start_at = row["deadline"]
+            if len(start_at) == 10:
+                start_at = f"{start_at}T09:00:00+02:00"
+            try:
+                start = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+                end_at = (start + timedelta(hours=1)).isoformat()
+            except ValueError:
+                continue
+            payload["calendar_event"] = {
+                "title": row["title"], "start_at": start_at, "end_at": end_at,
+                "location": None, "attendees": [],
+            }
+            connection.execute(
+                "UPDATE proposed_actions SET action_type = 'calendar_event', payload_json = ? WHERE id = ?",
+                (json.dumps(payload), row["id"]),
+            )
 
     @staticmethod
     def _ensure_entity(connection, name: str):
@@ -402,14 +440,23 @@ class Database:
                     item_commitment_id = cursor.lastrowid
                     commitment_id = commitment_id or item_commitment_id
                 if item.proposed_action:
-                    action_type = "draft_reply" if item.suggested_reply else "review"
+                    action_type = "calendar_event" if item.kind == "meeting" else "draft_reply" if item.suggested_reply else "review"
+                    payload = {"suggested_reply": item.suggested_reply,
+                               "scenario": analysis.scenario, "work_item_kind": item.kind}
+                    if item.kind == "meeting":
+                        payload["calendar_event"] = {
+                            "title": item.title,
+                            "start_at": item.start_at or item.deadline,
+                            "end_at": item.end_at,
+                            "location": item.location,
+                            "attendees": item.attendees,
+                        }
                     cursor = connection.execute(
                         """INSERT INTO proposed_actions
                            (commitment_id, email_id, action_type, description, payload_json, status)
                            VALUES (?, ?, ?, ?, ?, ?)""",
                         (item_commitment_id, email_id, action_type, item.proposed_action,
-                         json.dumps({"suggested_reply": item.suggested_reply,
-                                     "scenario": analysis.scenario, "work_item_kind": item.kind}),
+                         json.dumps(payload),
                          ActionStatus.PENDING_APPROVAL.value),
                     )
                     action_id = action_id or cursor.lastrowid
@@ -1198,6 +1245,29 @@ class Database:
             ).fetchone()
             return dict(row)
 
+    def update_action_payload(self, action_id: int, updates: dict, allowed_types: set[str]):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT * FROM proposed_actions WHERE id = ?
+                   AND status IN ('pending_approval', 'approved')""", (action_id,)
+            ).fetchone()
+            if not row or row["action_type"] not in allowed_types:
+                return None
+            payload = json.loads(row["payload_json"] or "{}")
+            payload.update(updates)
+            connection.execute(
+                "UPDATE proposed_actions SET payload_json = ? WHERE id = ?",
+                (json.dumps(payload), action_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('action', ?, 'proposal_updated', ?)""",
+                (action_id, json.dumps({"fields": sorted(updates)})),
+            )
+            return dict(connection.execute(
+                "SELECT * FROM proposed_actions WHERE id = ?", (action_id,)
+            ).fetchone())
+
     def finish_action(self, action_id: int, external_result: dict):
         with self.connect() as connection:
             current = connection.execute(
@@ -1463,8 +1533,7 @@ class Database:
             connection.execute(
                 """UPDATE proposed_actions
                    SET status = ?, decision_note = ?, decided_at = CURRENT_TIMESTAMP
-                   WHERE commitment_id = ? AND action_type = 'open_loop_review'
-                         AND status = ?""",
+                   WHERE commitment_id = ? AND status = ?""",
                 (ActionStatus.REJECTED.value,
                  f"Closed automatically when commitment completed. {note or ''}".strip(),
                  commitment_id, ActionStatus.PENDING_APPROVAL.value),

@@ -110,7 +110,8 @@ class GmailOperator:
         padding = "=" * (-len(data) % 4)
         return base64.urlsafe_b64decode(data + padding)
 
-    def create_reply_draft(self, gmail_msg_id: str, reply_text: str):
+    def create_reply_draft(self, gmail_msg_id: str, reply_text: str,
+                           subject_override: str | None = None):
         original = self.service.users().messages().get(
             userId="me", id=gmail_msg_id, format="metadata",
             metadataHeaders=["From", "Subject", "Message-ID"],
@@ -122,8 +123,8 @@ class GmailOperator:
         recipient = headers.get("from")
         if not recipient:
             raise ValueError("Original email has no From header")
-        subject = headers.get("subject") or "(no subject)"
-        if not subject.casefold().startswith("re:"):
+        subject = subject_override or headers.get("subject") or "(no subject)"
+        if not subject_override and not subject.casefold().startswith("re:"):
             subject = f"Re: {subject}"
         draft = MIMEText(reply_text, "plain", "utf-8")
         draft["To"] = recipient
@@ -155,3 +156,8 @@ def action_reply_text(action: dict) -> str:
     if not reply:
         raise ValueError("Approved action has no suggested reply")
     return reply
+
+
+def action_reply_subject(action: dict) -> str | None:
+    payload = json.loads(action.get("payload_json") or "{}")
+    return payload.get("draft_subject")

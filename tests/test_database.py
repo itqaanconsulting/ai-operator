@@ -68,6 +68,22 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(queue[0]["email"]["subject"], "Invoice")
         self.assertEqual(len(queue[0]["commitments"]), 2)
 
+    def test_meeting_work_item_creates_calendar_proposal_action(self):
+        analysis = EmailAnalysis(
+            category="meeting", scenario="meeting", summary="Meeting requested.",
+            work_items=[EmailWorkItem(
+                kind="meeting", title="Project review", proposed_action="Create meeting",
+                start_at="2026-09-18T10:00:00+02:00", end_at="2026-09-18T10:30:00+02:00",
+                attendees=["jane@example.com"],
+            )],
+        )
+        _, _, action_id = self.db.save_analysis(
+            EmailRequest(subject="Meeting", body="Can we meet?"), analysis
+        )
+        action = next(row for row in self.db.list_rows("proposed_actions") if row["id"] == action_id)
+        self.assertEqual(action["action_type"], "calendar_event")
+        self.assertIn("2026-09-18T10:00:00+02:00", action["payload_json"])
+
     def test_action_can_only_be_decided_once(self):
         request = EmailRequest(subject="Action required", body="Can you review this?")
         analysis = EmailAnalysis(
@@ -83,6 +99,30 @@ class DatabaseTest(unittest.TestCase):
 
         self.assertEqual(approved["status"], "approved")
         self.assertIsNone(repeated)
+
+    def test_completing_work_rejects_its_pending_primary_action(self):
+        _, commitment_id, action_id = self.db.save_analysis(
+            EmailRequest(subject="Task", body="Please handle"),
+            EmailAnalysis(category="task", summary="Task", commitment_title="Handle task",
+                          proposed_action="Handle the task"),
+        )
+        self.db.complete_commitment(commitment_id, "Done")
+        action = next(row for row in self.db.list_rows("proposed_actions") if row["id"] == action_id)
+        self.assertEqual(action["status"], "rejected")
+
+    def test_reply_draft_can_be_edited_before_execution(self):
+        _, _, action_id = self.db.save_analysis(
+            EmailRequest(subject="Reply", body="Please reply"),
+            EmailAnalysis(category="task", summary="Reply", commitment_title="Reply",
+                          proposed_action="Draft reply", suggested_reply="Original"),
+        )
+        updated = self.db.update_action_payload(
+            action_id, {"draft_subject": "Re: Updated", "suggested_reply": "Edited body"},
+            {"draft_reply"},
+        )
+        payload = __import__("json").loads(updated["payload_json"])
+        self.assertEqual(payload["draft_subject"], "Re: Updated")
+        self.assertEqual(payload["suggested_reply"], "Edited body")
 
     def test_approved_action_can_only_be_claimed_once(self):
         request = EmailRequest(

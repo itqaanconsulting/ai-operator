@@ -74,14 +74,18 @@ function renderCommitments() {
         const action = group.actions.find(candidate => candidate.commitment_id === item.id && candidate.action_type !== "open_loop_review")
           || group.actions.find(candidate => candidate.commitment_id === item.id);
         const payload = action ? parseJson(action.payload_json) : {};
+        const event = payload.calendar_event || {};
         return `<article class="work-item">
           <h3>${escapeHtml(item.title)}</h3>
           <div class="meta"><span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span><span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">${escapeHtml(deadlineState(item.deadline))}</span>${payload.work_item_kind ? `<span class="pill">${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}</div>
           ${action ? `<div class="proposed-action"><span>Proposed action</span><p>${escapeHtml(action.description)}</p></div>` : ""}
+          ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor"><summary>Preview or edit reply</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea><button class="button secondary" data-save-draft="${action.id}">Save changes</button></div></details>` : ""}
+          ${action?.action_type === "calendar_event" ? `<details class="draft-editor"><summary>Preview or edit Calendar proposal</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><input data-event-start="${action.id}" value="${escapeHtml(event.start_at || "")}" placeholder="Start ISO date/time"><input data-event-end="${action.id}" value="${escapeHtml(event.end_at || "")}" placeholder="End ISO date/time"><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save proposal</button></div></details>` : ""}
           <div class="card-actions">
             ${action?.status === "pending_approval" ? `<button class="button approve" data-approve="${action.id}">Approve</button><button class="button reject" data-reject="${action.id}">Reject</button>` : ""}
             ${action?.status === "approved" && action.action_type === "draft_reply" ? `<button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
-            ${action?.status === "approved" && action.action_type !== "draft_reply" ? '<span class="pill approved">Approved · manual action</span>' : ""}
+            ${action?.status === "approved" && action.action_type === "calendar_event" ? `<button class="button execute" data-execute="${action.id}">Create Calendar event</button>` : ""}
+            ${action?.status === "approved" && !["draft_reply", "calendar_event"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
             <button class="button secondary" data-complete="${item.id}">Mark complete</button>
           </div>
         </article>`;
@@ -93,6 +97,8 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-approve]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.approve, "approve")));
   elements.commitments.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.reject, "reject")));
   elements.commitments.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
+  elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
+  elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
 }
 
 function renderCalendarEvents() {
@@ -375,8 +381,28 @@ async function decideAction(id, decision) {
 }
 
 async function executeAction(id) {
-  try { await api(`/actions/${id}/execute`, { method: "POST" }); notify("Gmail draft created. Nothing was sent."); await refresh(); }
+  try { await api(`/actions/${id}/execute`, { method: "POST" }); notify("Approved action completed. No email was sent automatically."); await refresh(); }
   catch (error) { notify(error.message, true); }
+}
+
+async function saveCalendarProposal(id) {
+  const value = name => elements.commitments.querySelector(`[data-event-${name}="${id}"]`).value.trim();
+  const attendees = value("attendees").split(",").map(item => item.trim()).filter(Boolean);
+  const proposal = { title: value("title"), start_at: value("start"), end_at: value("end"), location: value("location") || null, attendees };
+  try {
+    await api(`/actions/${id}/calendar-proposal`, { method: "PUT", body: JSON.stringify(proposal) });
+    notify("Calendar proposal saved. No event was created."); await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
+async function saveActionDraft(id) {
+  const subject = elements.commitments.querySelector(`[data-draft-subject="${id}"]`).value.trim();
+  const body = elements.commitments.querySelector(`[data-draft-body="${id}"]`).value.trim();
+  if (!subject || !body) { notify("Draft subject and body are required.", true); return; }
+  try {
+    await api(`/actions/${id}/draft`, { method: "PUT", body: JSON.stringify({ subject, body }) });
+    notify("Draft changes saved. Nothing was sent."); await refresh();
+  } catch (error) { notify(error.message, true); }
 }
 
 async function completeCommitment(id) {
@@ -409,7 +435,9 @@ async function importGmail() {
   try {
     const result = await api("/automation/inbox", { method: "POST", body: JSON.stringify({ label: "AI-Operator", max_results: 10 }) });
     const reminders = result.open_loop_monitor.created.length;
-    notify(`Scan #${result.run_id}: ${result.processed.length} new, ${result.skipped.length} already known, ${reminders} reminder${reminders === 1 ? "" : "s"}.`, result.errors.length > 0);
+    const documents = result.document_automation || { review_ready: [], analyzed_only: [], errors: [] };
+    const documentCount = documents.review_ready.length + documents.analyzed_only.length;
+    notify(`Scan #${result.run_id}: ${result.processed.length} new emails, ${documentCount} new documents, ${reminders} reminder${reminders === 1 ? "" : "s"}.`, result.errors.length > 0 || documents.errors.length > 0);
     await refresh();
   } catch (error) { notify(error.message, true); }
   finally { button.disabled = false; }

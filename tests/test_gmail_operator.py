@@ -101,13 +101,15 @@ class GmailOperatorTest(unittest.TestCase):
         )
 
     def test_create_reply_draft_keeps_thread_and_never_sends(self):
-        result = self.operator.create_reply_draft("msg-1", "Hi Jane, approved.")
+        result = self.operator.create_reply_draft(
+            "msg-1", "Hi Jane, approved.", "Re: Edited project subject"
+        )
 
         draft_body = self.service.users_resource.drafts_resource.body
         raw = base64.urlsafe_b64decode(draft_body["message"]["raw"])
         self.assertEqual(result["draft_id"], "draft-1")
         self.assertEqual(draft_body["message"]["threadId"], "thread-1")
-        self.assertIn(b"Subject: Re: Project X", raw)
+        self.assertIn(b"Subject: Re: Edited project subject", raw)
         self.assertIn(b"jane@example.com", raw)
 
     def test_create_standalone_draft_has_recipient_and_never_sends(self):

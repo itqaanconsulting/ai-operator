@@ -41,6 +41,10 @@ class EmailWorkItem(BaseModel):
     proposed_action: str | None = None
     suggested_reply: str | None = None
     requires_approval: bool = True
+    start_at: str | None = None
+    end_at: str | None = None
+    location: str | None = None
+    attendees: list[str] = Field(default_factory=list, max_length=50)
 
 
 class EmailAnalysis(BaseModel):
@@ -71,6 +75,19 @@ class AnalysisResult(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+class ActionDraftUpdateRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=20_000)
+
+
+class CalendarEventProposalUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    start_at: str = Field(min_length=10, max_length=50)
+    end_at: str = Field(min_length=10, max_length=50)
+    location: str | None = Field(default=None, max_length=500)
+    attendees: list[str] = Field(default_factory=list, max_length=50)
 
 
 class GmailImportRequest(BaseModel):

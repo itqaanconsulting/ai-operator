@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 TOKEN_PATH = "token.pickle"
 CREDENTIALS_PATH = "credentials.json"

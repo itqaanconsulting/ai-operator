@@ -290,27 +290,43 @@ finding is shown together with its proposed action and available approval or
 draft controls. Deadline monitoring does not create a second reminder when a
 primary action for the same work item is already pending.
 
+The same inbox run also imports supported Gmail attachments. Documents are
+analyzed automatically and, when a trusted reference exists, compared and placed
+in the human document review queue.
+
+Reply actions include an editable subject/body preview. Saving changes only
+updates the local proposal; the approved **Create Gmail draft** action creates a
+draft in Gmail and never sends it.
+
+Meeting actions include an editable Calendar proposal. After approval, **Create
+Calendar event** writes the event with `sendUpdates=none`, so attendee invitation
+emails are not sent automatically.
+
 Ready-to-send fictional examples are available in
 [`docs/test-emails.md`](docs/test-emails.md).
 
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.
 
-## Read-only Google Calendar context
+## Google Calendar context and approved event creation
 
 The operator can import a bounded window of Calendar events as a second context
-source. It requests `calendar.readonly`; no code path creates, edits, or deletes
-Google Calendar events.
+source. Meeting emails can also produce an editable Calendar proposal. The event
+is created only after explicit action approval and a separate **Create Calendar
+event** click. Attendee update emails are disabled.
 
 Before the first import:
 
 1. Enable the **Google Calendar API** in the same Google Cloud project.
 2. Stop the API if it is running.
-3. Run `python calendar_auth.py` and approve the additional read-only permission.
+3. Run `python calendar_auth.py` and approve the `calendar.events` permission.
 4. Restart the API.
 
 The shared token covers both Gmail and Calendar. Adding the Calendar scope requires
 one new authorization even when Gmail was already connected.
+
+If an older token only has `calendar.readonly`, delete `token.pickle`, run
+`python calendar_auth.py`, and complete Google authorization again.
 
 Import a bounded event window:
 
