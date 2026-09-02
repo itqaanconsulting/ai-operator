@@ -12,7 +12,7 @@ from pypdf import PdfWriter
 from analyzer import EmailAnalyzer
 from database import Database
 from document_processor import extract_document
-from models import DocumentAnalysis
+from models import DocumentAnalysis, RevisionRequestDraft
 
 
 class FakeCompletions:
@@ -54,6 +54,16 @@ class FakeComparisonCompletions:
             "recommendation": "revise",
             "recommendation_reason": "Resolve the high-impact deviations.",
             "confidence": 0.9,
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+class FakeRevisionDraftCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "subject": "Requested revisions to the proposed agreement",
+            "body": "Please revise the termination notice period before we continue our review.",
+            "requested_changes": ["Restore the thirty-day termination notice period."],
         })
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
@@ -170,6 +180,35 @@ class DocumentTest(unittest.TestCase):
         listed = next(item for item in self.db.list_document_comparisons()
                       if item["id"] == stored["id"])
         self.assertEqual(listed["review_status"], "revision_requested")
+
+    def test_revision_draft_uses_human_decision_and_is_deduplicated(self):
+        comparison_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=FakeComparisonCompletions())
+        )
+        comparison = EmailAnalyzer(client=comparison_client, model="test").compare_documents(
+            "candidate.txt", "Ninety days notice.", "reference.txt", "Thirty days notice."
+        )
+        stored, _, _ = self.db.save_document_comparison(
+            "candidate.txt", "candidate-draft-hash",
+            "reference.txt", "reference-draft-hash", comparison,
+        )
+        self.db.decide_document_comparison(
+            stored["id"], "revision_requested", "Restore the approved notice period."
+        )
+        context = self.db.get_revision_draft_context(stored["id"])
+        draft_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeRevisionDraftCompletions()))
+        draft = EmailAnalyzer(client=draft_client, model="test").create_revision_request_draft(
+            json.loads(context["comparison_json"]), context["note"]
+        )
+
+        first, duplicate = self.db.save_revision_draft(stored["id"], draft)
+        second, second_duplicate = self.db.save_revision_draft(stored["id"], draft)
+
+        self.assertFalse(duplicate)
+        self.assertTrue(second_duplicate)
+        self.assertEqual(first["id"], second["id"])
+        self.assertIn("termination", first["body"])
+        self.assertEqual(self.db.get_revision_draft_context(stored["id"])["draft_id"], first["id"])
 
 
 if __name__ == "__main__":

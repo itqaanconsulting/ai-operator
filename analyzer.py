@@ -3,7 +3,10 @@ import os
 
 from openai import OpenAI
 
-from models import DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailRequest, EntityStatusBrief
+from models import (
+    DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailRequest,
+    EntityStatusBrief, RevisionRequestDraft,
+)
 
 
 SYSTEM_PROMPT = """
@@ -98,6 +101,34 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty document comparison")
         return DocumentComparison.model_validate(json.loads(content))
+
+    def create_revision_request_draft(self, comparison: dict, human_note: str) -> RevisionRequestDraft:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Write a concise, professional revision-request email draft using only the "
+                        "supplied document comparison and human review note. Do not add legal claims, "
+                        "deadlines, recipients, or changes that are not in the supplied records. "
+                        "Return JSON with subject, body, and requested_changes (an array of short strings). "
+                        "Make clear that the attached/new agreement should be revised; do not claim it "
+                        "has been rejected, sent, signed, or legally reviewed."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps({"comparison": comparison, "human_note": human_note}),
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty revision request draft")
+        return RevisionRequestDraft.model_validate(json.loads(content))
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

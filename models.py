@@ -169,3 +169,17 @@ class DocumentComparisonResult(BaseModel):
 class DocumentReviewDecisionRequest(BaseModel):
     decision: Literal["approved", "revision_requested", "rejected"]
     note: str = Field(min_length=1, max_length=2000)
+
+
+class RevisionRequestDraft(BaseModel):
+    subject: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=10_000)
+    requested_changes: list[str] = Field(default_factory=list)
+
+
+class RevisionRequestDraftResult(BaseModel):
+    draft_id: int
+    comparison_id: int
+    draft: RevisionRequestDraft
+    duplicate: bool = False
+    external_action_taken: bool = False

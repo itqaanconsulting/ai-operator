@@ -307,6 +307,21 @@ is mandatory so the business reasoning remains auditable. Repeating or changing
 a final decision returns HTTP 409. This endpoint records the decision only; it
 does not sign, modify, or send the document.
 
+### Prepare a revision-request draft
+
+After a human records `revision_requested`, call:
+
+`POST /documents/comparisons/{comparison_id}/revision-draft`
+
+The AI uses only the stored material differences and the human review note to
+prepare a subject, email body, and explicit list of requested changes. The draft
+is stored idempotently: repeated calls return the same draft and do not call the
+model again. Inspect all prepared drafts with `GET /documents/revision-drafts`.
+
+This is an internal draft only. No recipient is selected, no Gmail draft is
+created, and no message is sent. Connecting the approved text to Gmail remains a
+separate, explicitly controlled step.
+
 ## Tests
 
 ```powershell
@@ -323,4 +338,4 @@ a public repository or log.
 
 1. Compare one synthetic candidate contract with a trusted reference document.
 2. Record a human review decision and verify it in the entity timeline.
-3. Generate a controlled revision-request email draft after that decision.
+3. Review the generated revision-request text before connecting it to Gmail.

@@ -4,7 +4,9 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from models import ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis
+from models import (
+    ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis, RevisionRequestDraft,
+)
 
 
 def normalize_entity_name(name: str) -> str:
@@ -180,6 +182,15 @@ class Database:
                     ),
                     note TEXT NOT NULL,
                     decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS document_revision_drafts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comparison_id INTEGER NOT NULL UNIQUE
+                        REFERENCES document_comparisons(id) ON DELETE CASCADE,
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    requested_changes_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
@@ -416,6 +427,55 @@ class Database:
                 "SELECT * FROM document_review_decisions WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
             return dict(row), None
+
+    def get_revision_draft_context(self, comparison_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT dc.id, dc.candidate_filename, dc.reference_filename,
+                          dc.comparison_json, drd.decision, drd.note,
+                          drd.decided_at, draft.id AS draft_id,
+                          draft.subject AS draft_subject, draft.body AS draft_body,
+                          draft.requested_changes_json
+                   FROM document_comparisons dc
+                   LEFT JOIN document_review_decisions drd ON drd.comparison_id = dc.id
+                   LEFT JOIN document_revision_drafts draft ON draft.comparison_id = dc.id
+                   WHERE dc.id = ?""", (comparison_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def save_revision_draft(self, comparison_id: int, draft: RevisionRequestDraft):
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM document_revision_drafts WHERE comparison_id = ?",
+                (comparison_id,),
+            ).fetchone()
+            if existing:
+                return dict(existing), True
+            cursor = connection.execute(
+                """INSERT INTO document_revision_drafts
+                   (comparison_id, subject, body, requested_changes_json)
+                   VALUES (?, ?, ?, ?)""",
+                (comparison_id, draft.subject, draft.body, json.dumps(draft.requested_changes)),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document_comparison', ?, 'revision_draft_created', ?)""",
+                (comparison_id, json.dumps({"draft_id": cursor.lastrowid})),
+            )
+            row = connection.execute(
+                "SELECT * FROM document_revision_drafts WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), False
+
+    def list_revision_drafts(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT drd.*, dc.candidate_filename, dc.reference_filename
+                   FROM document_revision_drafts drd
+                   JOIN document_comparisons dc ON dc.id = drd.comparison_id
+                   ORDER BY drd.created_at DESC"""
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def email_exists(self, gmail_msg_id: str) -> bool:
         with self.connect() as connection:

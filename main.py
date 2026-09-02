@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -29,13 +30,15 @@ from models import (
     DocumentAnalysisResult,
     DocumentComparisonResult,
     DocumentReviewDecisionRequest,
+    RevisionRequestDraft,
+    RevisionRequestDraftResult,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.10.0")
+app = FastAPI(title="AI Commitment Operator", version="0.11.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -58,6 +61,7 @@ def health():
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
         "document_human_review_required": True,
+        "revision_draft_enabled": True,
     }
 
 
@@ -268,6 +272,50 @@ def decide_document_comparison(comparison_id: int, request: DocumentReviewDecisi
         "external_action_taken": False,
         "message": "Decision recorded. No document was signed, sent, or modified.",
     }
+
+
+@app.post(
+    "/documents/comparisons/{comparison_id}/revision-draft",
+    response_model=RevisionRequestDraftResult,
+)
+def create_document_revision_draft(comparison_id: int):
+    context = database.get_revision_draft_context(comparison_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="Document comparison was not found")
+    if context["decision"] != "revision_requested":
+        raise HTTPException(
+            status_code=409,
+            detail="A human revision_requested decision is required before drafting follow-up",
+        )
+    try:
+        if context.get("draft_id"):
+            existing_draft = RevisionRequestDraft(
+                subject=context["draft_subject"], body=context["draft_body"],
+                requested_changes=json.loads(context["requested_changes_json"]),
+            )
+            return RevisionRequestDraftResult(
+                draft_id=context["draft_id"], comparison_id=comparison_id,
+                draft=existing_draft, duplicate=True,
+            )
+        comparison = json.loads(context["comparison_json"])
+        draft = EmailAnalyzer().create_revision_request_draft(comparison, context["note"])
+        stored, duplicate = database.save_revision_draft(comparison_id, draft)
+        if duplicate:
+            draft = RevisionRequestDraft(
+                subject=stored["subject"], body=stored["body"],
+                requested_changes=json.loads(stored["requested_changes_json"]),
+            )
+        return RevisionRequestDraftResult(
+            draft_id=stored["id"], comparison_id=comparison_id,
+            draft=draft, duplicate=duplicate,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/documents/revision-drafts")
+def list_document_revision_drafts():
+    return {"drafts": database.list_revision_drafts()}
 
 
 @app.post("/actions/{action_id}/execute")
