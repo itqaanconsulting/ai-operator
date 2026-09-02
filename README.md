@@ -17,6 +17,7 @@ automatically.
 - Creates a Gmail draft in the original thread after explicit approval.
 - Groups related emails, commitments, actions, and decisions by company or project.
 - Produces a grounded status brief with a recommended next action.
+- Reviews uploaded PDF, DOCX, and TXT business documents and links them to context.
 
 The Gmail poller does not start automatically. Importing does not change labels
 or mark messages as read. The operator can only create drafts; it has no endpoint
@@ -253,6 +254,23 @@ not invent a company or project association.
 Inspect imported events with `GET /calendar/events`. Matched meetings appear in the
 entity timeline, grounded status brief, and operator dashboard.
 
+## Document and contract review
+
+Use `POST /documents/analyze` in the interactive API documentation and select one
+PDF, DOCX, or TXT file. The operator extracts its text locally, asks AI for a
+structured review, stores the result, and links the identified company or project
+to its timeline and status context. `GET /documents` lists prior reviews.
+
+The review includes document type, summary, parties, obligations, deadlines,
+financial terms, risk indicators, missing information, and a cautious
+review/revise/approve/reject recommendation. It is an AI review aid, not legal
+advice, and always requires human review. The application does not edit, sign,
+send, or otherwise act on a document.
+
+Uploads are limited to 10 MB and 100,000 extracted characters are sent for
+analysis. Password-protected files are unsupported. Image-only/scanned PDFs need
+OCR, which is intentionally left for a later iteration.
+
 ## Tests
 
 ```powershell
@@ -267,6 +285,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Authorize Calendar and import one Carrefour test meeting.
-2. Verify that the meeting appears in the entity status brief and dashboard.
-3. Schedule the open-loop monitor to run periodically.
+1. Upload one synthetic test contract and inspect its structured review.
+2. Verify that the document appears in the matching entity timeline and status.
+3. Add clause comparison against a trusted reference agreement.

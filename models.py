@@ -91,3 +91,27 @@ class CalendarImportRequest(BaseModel):
     calendar_id: str = Field(default="primary", min_length=1, max_length=300)
     days_before: int = Field(default=30, ge=0, le=365)
     days_after: int = Field(default=90, ge=1, le=365)
+
+
+class DocumentAnalysis(BaseModel):
+    document_type: Literal["contract", "proposal", "report", "invoice", "other"]
+    summary: str
+    company_or_project: str | None = None
+    parties: list[str] = Field(default_factory=list)
+    obligations: list[str] = Field(default_factory=list)
+    deadlines: list[str] = Field(default_factory=list)
+    financial_terms: list[str] = Field(default_factory=list)
+    risk_indicators: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    recommendation: Literal["review", "revise", "approve", "reject"] = "review"
+    recommendation_reason: str
+    confidence: float = Field(default=0.5, ge=0, le=1)
+
+
+class DocumentAnalysisResult(BaseModel):
+    document_id: int
+    filename: str
+    analysis: DocumentAnalysis
+    entity_id: int | None = None
+    duplicate: bool = False
+    disclaimer: str = "AI review aid only; not legal advice. Human review is required."

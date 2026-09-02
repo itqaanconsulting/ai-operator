@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from models import ActionStatus, EmailAnalysis
+from models import ActionStatus, DocumentAnalysis, EmailAnalysis
 
 
 def normalize_entity_name(name: str) -> str:
@@ -139,11 +139,28 @@ class Database:
                     entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
                     PRIMARY KEY (calendar_event_id, entity_id)
                 );
+                CREATE TABLE IF NOT EXISTS documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL,
+                    mime_type TEXT,
+                    sha256 TEXT NOT NULL UNIQUE,
+                    document_type TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    analysis_json TEXT NOT NULL,
+                    extracted_text TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS document_entities (
+                    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    PRIMARY KEY (document_id, entity_id)
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
                 CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
                 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
+                CREATE INDEX IF NOT EXISTS idx_document_entities_entity ON document_entities(entity_id);
                 """
             )
             self._backfill_entities(connection)
@@ -240,6 +257,54 @@ class Database:
                 (email_id,),
             )
             return email_id, commitment_id, action_id
+
+    def save_document(self, filename: str, mime_type: str | None, sha256: str,
+                      extracted_text: str, analysis: DocumentAnalysis):
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM documents WHERE sha256 = ?", (sha256,)
+            ).fetchone()
+            if existing:
+                entity = connection.execute(
+                    "SELECT entity_id FROM document_entities WHERE document_id = ? LIMIT 1",
+                    (existing["id"],),
+                ).fetchone()
+                return dict(existing), entity["entity_id"] if entity else None, True
+            cursor = connection.execute(
+                """INSERT INTO documents
+                   (filename, mime_type, sha256, document_type, summary, analysis_json, extracted_text)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (filename, mime_type, sha256, analysis.document_type, analysis.summary,
+                 analysis.model_dump_json(), extracted_text),
+            )
+            document_id = cursor.lastrowid
+            entity_id = None
+            if analysis.company_or_project:
+                entity_id = self._ensure_entity(connection, analysis.company_or_project)
+                connection.execute(
+                    "INSERT INTO document_entities (document_id, entity_id) VALUES (?, ?)",
+                    (document_id, entity_id),
+                )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('document', ?, 'analyzed', ?)""",
+                (document_id, json.dumps({"filename": filename, "entity_id": entity_id})),
+            )
+            row = connection.execute("SELECT * FROM documents WHERE id = ?", (document_id,)).fetchone()
+            return dict(row), entity_id, False
+
+    def list_documents(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT d.id, d.filename, d.mime_type, d.document_type, d.summary,
+                          d.analysis_json, d.created_at,
+                          GROUP_CONCAT(DISTINCT e.name) AS entity_names
+                   FROM documents d
+                   LEFT JOIN document_entities de ON de.document_id = d.id
+                   LEFT JOIN entities e ON e.id = de.entity_id
+                   GROUP BY d.id ORDER BY d.created_at DESC"""
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def email_exists(self, gmail_msg_id: str) -> bool:
         with self.connect() as connection:
@@ -443,6 +508,12 @@ class Database:
             connection.execute(
                 "DELETE FROM calendar_event_entities WHERE entity_id = ?", (source["id"],)
             )
+            connection.execute(
+                """INSERT OR IGNORE INTO document_entities (document_id, entity_id)
+                   SELECT document_id, ? FROM document_entities WHERE entity_id = ?""",
+                (target_id, source["id"]),
+            )
+            connection.execute("DELETE FROM document_entities WHERE entity_id = ?", (source["id"],))
             connection.execute(
                 "UPDATE decisions SET entity_id = ? WHERE entity_id = ?", (target_id, source["id"])
             )
@@ -703,6 +774,12 @@ class Database:
                    JOIN calendar_event_entities cee ON cee.calendar_event_id = ce.id
                    WHERE cee.entity_id = ? ORDER BY ce.start_at DESC""", (entity_id,)
             ).fetchall()
+            documents = connection.execute(
+                """SELECT d.id, d.filename, d.document_type, d.summary,
+                          d.analysis_json, d.created_at
+                   FROM documents d JOIN document_entities de ON de.document_id = d.id
+                   WHERE de.entity_id = ? ORDER BY d.created_at DESC""", (entity_id,)
+            ).fetchall()
             return {
                 "entity": dict(entity),
                 "emails": [dict(row) for row in emails],
@@ -710,6 +787,7 @@ class Database:
                 "actions": [dict(row) for row in actions],
                 "decisions": [dict(row) for row in decisions],
                 "calendar_events": [dict(row) for row in calendar_events],
+                "documents": [dict(row) for row in documents],
             }
 
     def entity_timeline(self, entity_id: int):
@@ -728,5 +806,8 @@ class Database:
         for calendar_event in context["calendar_events"]:
             events.append({"type": "calendar_event", "timestamp": calendar_event["start_at"],
                            "data": calendar_event})
+        for document in context["documents"]:
+            events.append({"type": "document", "timestamp": document["created_at"],
+                           "data": document})
         events.sort(key=lambda event: event["timestamp"] or "", reverse=True)
         return {"entity": context["entity"], "events": events}

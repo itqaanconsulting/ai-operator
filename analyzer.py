@@ -3,7 +3,7 @@ import os
 
 from openai import OpenAI
 
-from models import EmailAnalysis, EmailRequest, EntityStatusBrief
+from models import DocumentAnalysis, EmailAnalysis, EmailRequest, EntityStatusBrief
 
 
 SYSTEM_PROMPT = """
@@ -36,6 +36,33 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty analysis")
         return EmailAnalysis.model_validate(json.loads(content))
+
+    def analyze_document(self, filename: str, text: str) -> DocumentAnalysis:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious business document review assistant, not a lawyer. "
+                        "Use only the supplied document text and do not invent clauses or facts. "
+                        "Flag uncertainty and missing information. Return JSON with document_type "
+                        "(contract, proposal, report, invoice, or other), summary, "
+                        "company_or_project, parties, obligations, deadlines, financial_terms, "
+                        "risk_indicators, missing_information, recommendation (review, revise, "
+                        "approve, or reject), recommendation_reason, and confidence (0 to 1). "
+                        "All collection fields must be arrays of short strings."
+                    ),
+                },
+                {"role": "user", "content": f"Filename: {filename}\n\nDocument text:\n{text}"},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty document analysis")
+        return DocumentAnalysis.model_validate(json.loads(content))
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

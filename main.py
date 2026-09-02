@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -10,6 +10,7 @@ from analyzer import EmailAnalyzer
 from calendar_auth import get_calendar_service
 from calendar_operator import CalendarOperator
 from database import Database
+from document_processor import extract_document
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_text
 from models import (
@@ -25,13 +26,14 @@ from models import (
     OpenLoopMonitorRequest,
     CompleteCommitmentRequest,
     CalendarImportRequest,
+    DocumentAnalysisResult,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.7.0")
+app = FastAPI(title="AI Commitment Operator", version="0.8.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -50,6 +52,8 @@ def health():
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": False,
+        "document_analysis_enabled": True,
+        "document_signing_enabled": False,
     }
 
 
@@ -182,6 +186,31 @@ def import_from_calendar(request: CalendarImportRequest):
 @app.get("/calendar/events")
 def list_calendar_events():
     return {"events": database.list_calendar_events()}
+
+
+@app.post("/documents/analyze", response_model=DocumentAnalysisResult)
+async def analyze_document(file: UploadFile = File(...)):
+    """Extract and analyze one local document without editing or transmitting it."""
+    try:
+        data = await file.read()
+        text, sha256 = extract_document(file.filename or "", data)
+        analysis = EmailAnalyzer().analyze_document(file.filename or "document", text)
+        stored, entity_id, duplicate = database.save_document(
+            file.filename or "document", file.content_type, sha256, text, analysis
+        )
+        if duplicate:
+            analysis = type(analysis).model_validate_json(stored["analysis_json"])
+        return DocumentAnalysisResult(
+            document_id=stored["id"], filename=stored["filename"], analysis=analysis,
+            entity_id=entity_id, duplicate=duplicate,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/documents")
+def list_documents():
+    return {"documents": database.list_documents()}
 
 
 @app.post("/actions/{action_id}/execute")

@@ -5,3 +5,6 @@ openai
 pydantic
 google-api-python-client
 google-auth-oauthlib
+pypdf
+python-docx
+python-multipart
