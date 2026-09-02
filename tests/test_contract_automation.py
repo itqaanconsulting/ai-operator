@@ -87,6 +87,21 @@ class ContractIntakeAutomationTest(unittest.TestCase):
                          "Assign a trusted reference")
         analyzer.analyze_document = original
 
+    def test_schedule_is_opt_in_and_due_runs_are_claimed_once(self):
+        initial = self.db.get_contract_schedule()
+        self.assertEqual(initial["enabled"], 0)
+
+        configured = self.db.configure_contract_schedule(True, 15, "AI-Operator", 10)
+        claimed = self.db.claim_due_contract_schedule()
+        duplicate_claim = self.db.claim_due_contract_schedule()
+        self.db.finish_contract_schedule(result={"review_ready": []})
+        finished = self.db.get_contract_schedule()
+
+        self.assertEqual(configured["enabled"], 1)
+        self.assertIsNotNone(claimed)
+        self.assertIsNone(duplicate_claim)
+        self.assertEqual(finished["last_status"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()

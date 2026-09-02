@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from analyzer import EmailAnalyzer
+from automation_scheduler import AutomationScheduler
 from calendar_auth import get_calendar_service
 from calendar_operator import CalendarOperator
 from contract_automation import ContractIntakeAutomation
@@ -37,20 +38,45 @@ from models import (
     RevisionRequestDraftResult,
     RevisionDraftApprovalRequest,
     TrustedReferenceRequest,
+    ContractAutomationScheduleRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.15.0")
+app = FastAPI(title="AI Commitment Operator", version="0.16.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
+
+
+def _execute_contract_intake(label: str, max_messages: int, trigger: str):
+    run_id = database.start_automation_run("contract_intake")
+    try:
+        attachments = GmailOperator(get_gmail_service()).list_labeled_attachments(
+            label, max_messages
+        )
+        result = ContractIntakeAutomation(database, EmailAnalyzer()).run(attachments)
+        result.update({"run_id": run_id, "trigger": trigger})
+        database.finish_automation_run(run_id, result)
+        return result
+    except Exception as exc:
+        database.fail_automation_run(run_id, str(exc))
+        raise
+
+
+scheduler = AutomationScheduler(database, _execute_contract_intake)
 
 
 @app.on_event("startup")
 def startup_event():
     database.init()
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.stop()
 
 
 @app.get("/health")
@@ -62,6 +88,7 @@ def health():
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,
         "contract_intake_automation_enabled": True,
+        "contract_intake_scheduler_configured": bool(database.get_contract_schedule()["enabled"]),
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": False,
@@ -216,23 +243,27 @@ def import_attachments_from_gmail(request: GmailAttachmentImportRequest):
 @app.post("/automation/contract-intake")
 def run_contract_intake_automation(request: GmailAttachmentImportRequest):
     """Prepare labeled Gmail documents for human review in one controlled run."""
-    run_id = database.start_automation_run("contract_intake")
     try:
-        attachments = GmailOperator(get_gmail_service()).list_labeled_attachments(
-            request.label, request.max_messages
-        )
-        result = ContractIntakeAutomation(database, EmailAnalyzer()).run(attachments)
-        result["run_id"] = run_id
-        database.finish_automation_run(run_id, result)
-        return result
+        return _execute_contract_intake(request.label, request.max_messages, "manual")
     except Exception as exc:
-        database.fail_automation_run(run_id, str(exc))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/automation/runs")
 def list_automation_runs():
     return {"runs": database.list_automation_runs()}
+
+
+@app.get("/automation/contract-intake/schedule")
+def get_contract_intake_schedule():
+    return database.get_contract_schedule()
+
+
+@app.put("/automation/contract-intake/schedule")
+def configure_contract_intake_schedule(request: ContractAutomationScheduleRequest):
+    return database.configure_contract_schedule(
+        request.enabled, request.interval_minutes, request.label, request.max_messages
+    )
 
 
 @app.post("/calendar/import")

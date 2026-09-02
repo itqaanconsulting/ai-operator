@@ -138,6 +138,12 @@ without a safe reference stop at `analyzed_only` with an explicit next step.
 Documents with a match appear in `review_ready`. The automation never makes the
 human approve/revise/reject decision and never creates or sends an email.
 
+Recurring intake is opt-in through `PUT /automation/contract-intake/schedule`.
+It is disabled by default and stores its interval, Gmail label, last run status,
+result, and error. The local scheduler atomically claims due work so overlapping
+runs cannot start. It performs only the safe intake-to-review workflow; human
+decisions and Gmail draft creation remain separate approval-gated actions.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.

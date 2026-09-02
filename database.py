@@ -240,6 +240,20 @@ class Database:
                     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     finished_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS automation_schedules (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    interval_minutes INTEGER NOT NULL DEFAULT 15,
+                    label TEXT NOT NULL DEFAULT 'AI-Operator',
+                    max_messages INTEGER NOT NULL DEFAULT 10,
+                    last_started_at TEXT,
+                    last_finished_at TEXT,
+                    last_status TEXT,
+                    last_result_json TEXT,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT OR IGNORE INTO automation_schedules (id) VALUES (1);
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -514,6 +528,55 @@ class Database:
                 "SELECT * FROM automation_runs ORDER BY id DESC LIMIT 50"
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def get_contract_schedule(self):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_schedules WHERE id = 1"
+            ).fetchone()
+            return dict(row)
+
+    def configure_contract_schedule(self, enabled: bool, interval_minutes: int,
+                                    label: str, max_messages: int):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE automation_schedules SET enabled = ?, interval_minutes = ?,
+                   label = ?, max_messages = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = 1""",
+                (int(enabled), interval_minutes, label.strip(), max_messages),
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_schedules WHERE id = 1"
+            ).fetchone()
+            return dict(row)
+
+    def claim_due_contract_schedule(self):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE automation_schedules
+                   SET last_started_at = CURRENT_TIMESTAMP, last_status = 'running',
+                       last_error = NULL
+                   WHERE id = 1 AND enabled = 1 AND COALESCE(last_status, 'idle') != 'running'
+                     AND (last_started_at IS NULL OR
+                          datetime(last_started_at, '+' || interval_minutes || ' minutes')
+                          <= CURRENT_TIMESTAMP)"""
+            )
+            if cursor.rowcount == 0:
+                return None
+            row = connection.execute(
+                "SELECT * FROM automation_schedules WHERE id = 1"
+            ).fetchone()
+            return dict(row)
+
+    def finish_contract_schedule(self, result: dict | None = None, error: str | None = None):
+        with self.connect() as connection:
+            status = "failed" if error else "completed"
+            connection.execute(
+                """UPDATE automation_schedules SET last_finished_at = CURRENT_TIMESTAMP,
+                   last_status = ?, last_result_json = ?, last_error = ? WHERE id = 1""",
+                (status, json.dumps(result) if result is not None else None,
+                 error[:2000] if error else None),
+            )
 
     def gmail_attachment_import_exists(self, gmail_msg_id: str, attachment_id: str):
         with self.connect() as connection:

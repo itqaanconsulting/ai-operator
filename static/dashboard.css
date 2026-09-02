@@ -77,6 +77,9 @@ main { max-width: 1500px; margin: 0 auto; padding: 26px 42px 50px; }
 .upload-form div { display: grid; gap: 8px; }
 .upload-form label { font-size: .78rem; font-weight: 800; }
 .upload-form input { max-width: 100%; color: var(--muted); }
+.schedule-control { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 14px 20px; border-top: 1px solid var(--line); background: #f7f9f8; }
+.schedule-control strong { font-size: .82rem; }
+.schedule-control p { color: var(--muted); font-size: .75rem; margin-top: 4px; }
 .document-card p, .supporting-copy, .comparison-card p, .draft-body { color: var(--muted); font-size: .8rem; line-height: 1.5; margin: 7px 0; }
 .card-title-row, .comparison-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .comparison-list { display: grid; gap: 12px; padding: 14px; }
@@ -104,6 +107,7 @@ main { max-width: 1500px; margin: 0 auto; padding: 26px 42px 50px; }
   .workspace, .two-column, .document-grid { grid-template-columns: 1fr; }
   .view-tabs { padding: 0 24px; }
   .upload-form { align-items: stretch; flex-direction: column; }
+  .schedule-control { align-items: flex-start; flex-direction: column; }
   .status-grid { grid-template-columns: 1fr; }
 }
 

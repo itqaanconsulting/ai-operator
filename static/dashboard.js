@@ -1,6 +1,7 @@
 const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
+  contractSchedule: null,
 };
 
 const elements = {
@@ -205,9 +206,10 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
+      api("/automation/contract-intake/schedule"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
@@ -217,9 +219,11 @@ async function refresh() {
     state.trustedReferences = references.trusted_references;
     state.comparisons = comparisons.comparisons;
     state.revisionDrafts = drafts.drafts;
+    state.contractSchedule = schedule;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
     renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
+    renderSchedule();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -309,6 +313,42 @@ async function importGmailAttachments() {
   } catch (error) { notify(error.message, true); }
 }
 
+function renderSchedule() {
+  if (!state.contractSchedule) return;
+  const enabled = Boolean(state.contractSchedule.enabled);
+  const last = state.contractSchedule.last_status
+    ? ` Last run: ${state.contractSchedule.last_status}${state.contractSchedule.last_finished_at ? ` at ${state.contractSchedule.last_finished_at}` : ""}.`
+    : " No scheduled run yet.";
+  document.querySelector("#schedule-status").textContent = enabled
+    ? `Enabled every ${state.contractSchedule.interval_minutes} minutes for label “${state.contractSchedule.label}”.${last}`
+    : `Disabled.${last}`;
+  const button = document.querySelector("#schedule-toggle-button");
+  button.textContent = enabled ? "Disable schedule" : "Enable schedule";
+  button.className = `button ${enabled ? "reject" : "approve"}`;
+}
+
+async function toggleSchedule() {
+  const current = state.contractSchedule;
+  if (!current) return;
+  let interval = current.interval_minutes || 15;
+  if (!current.enabled) {
+    const value = window.prompt("Check Gmail every how many minutes?", String(interval));
+    if (value === null) return;
+    interval = Number(value);
+    if (!Number.isInteger(interval) || interval < 1 || interval > 1440) {
+      notify("Enter a whole number between 1 and 1440 minutes.", true); return;
+    }
+  }
+  try {
+    await api("/automation/contract-intake/schedule", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: !Boolean(current.enabled), interval_minutes: interval, label: "AI-Operator", max_messages: 10 }),
+    });
+    notify(current.enabled ? "Scheduled intake disabled." : "Scheduled intake enabled. Human review remains required.");
+    await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
 async function markTrusted(id) {
   const label = window.prompt("Reference label:", "Approved reference")?.trim(); if (!label) return;
   const note = window.prompt("Why is this document trusted?", "Manually reviewed and approved as baseline.")?.trim(); if (!note) return;
@@ -355,5 +395,6 @@ document.querySelector("#monitor-button").addEventListener("click", runMonitor);
 elements.statusButton.addEventListener("click", generateStatus);
 document.querySelector("#document-upload-form").addEventListener("submit", uploadDocument);
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
+document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
 refresh();

@@ -201,3 +201,10 @@ class RevisionDraftApprovalRequest(BaseModel):
 class TrustedReferenceRequest(BaseModel):
     label: str = Field(min_length=1, max_length=300)
     note: str = Field(min_length=1, max_length=2000)
+
+
+class ContractAutomationScheduleRequest(BaseModel):
+    enabled: bool = False
+    interval_minutes: int = Field(default=15, ge=1, le=1440)
+    label: str = Field(default="AI-Operator", min_length=1, max_length=100)
+    max_messages: int = Field(default=10, ge=1, le=50)
