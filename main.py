@@ -45,7 +45,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.16.0")
+app = FastAPI(title="AI Commitment Operator", version="0.17.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -95,6 +95,7 @@ def health():
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
+        "document_evidence_verification_enabled": True,
         "document_human_review_required": True,
         "revision_draft_enabled": True,
         "revision_gmail_draft_enabled": True,

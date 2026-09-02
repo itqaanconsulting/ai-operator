@@ -161,8 +161,22 @@ function differenceList(comparison) {
   return comparison.material_differences.map(change => `
     <div class="difference-row">
       <span class="risk ${escapeHtml(change.significance)}">${escapeHtml(change.significance)}</span>
-      <div><strong>${escapeHtml(change.topic)}</strong><p>${escapeHtml(change.impact)}</p><small>${escapeHtml(change.suggested_resolution)}</small></div>
+      <div><strong>${escapeHtml(change.topic)}</strong><p>${escapeHtml(change.impact)}</p><small>${escapeHtml(change.suggested_resolution)}</small>
+        <div class="evidence-grid">
+          ${evidenceBlock("Candidate", change.candidate_evidence)}
+          ${evidenceBlock("Reference", change.reference_evidence)}
+        </div>
+      </div>
     </div>`).join("");
+}
+
+function evidenceBlock(label, evidence) {
+  if (!evidence) return `<div class="evidence missing"><strong>${label}</strong><span>No source evidence returned</span></div>`;
+  return `<div class="evidence ${evidence.verified ? "verified" : "unverified"}">
+    <strong>${label} · ${escapeHtml(evidence.location)}</strong>
+    <q>${escapeHtml(evidence.excerpt)}</q>
+    <span>${evidence.verified ? "Verified against extracted source" : "Not verified — inspect source"}</span>
+  </div>`;
 }
 
 function renderComparisons() {

@@ -353,6 +353,13 @@ The quality of the result depends on the reference document being genuinely
 trusted and relevant. The comparison remains a review aid and never signs,
 accepts, rejects, or transmits a contract.
 
+Every new material difference can include candidate and reference evidence. PDF
+locations use page markers, DOCX locations use paragraph/table markers, and TXT
+locations use line ranges. Excerpts must be copied verbatim by the model and are
+then checked deterministically against the extracted source. The dashboard marks
+each excerpt as verified or warns the reviewer to inspect the original. Missing
+evidence remains explicit instead of being invented.
+
 ### Human review decision
 
 Every new comparison starts with `review_status: pending_review`. A human can

@@ -144,6 +144,14 @@ class MaterialDifference(BaseModel):
     significance: Literal["low", "medium", "high"]
     impact: str
     suggested_resolution: str
+    candidate_evidence: "SourceEvidence | None" = None
+    reference_evidence: "SourceEvidence | None" = None
+
+
+class SourceEvidence(BaseModel):
+    location: str
+    excerpt: str
+    verified: bool = False
 
 
 class DocumentComparison(BaseModel):

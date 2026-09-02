@@ -45,7 +45,13 @@ class FakeComparisonCompletions:
                 "candidate_position": "Ninety days notice.",
                 "significance": "high",
                 "impact": "The exit period is three times longer.",
-                "suggested_resolution": "Restore the thirty-day notice period."
+                "suggested_resolution": "Restore the thirty-day notice period.",
+                "candidate_evidence": {
+                    "location": "lines=1-1", "excerpt": "Ninety days notice."
+                },
+                "reference_evidence": {
+                    "location": "lines=1-1", "excerpt": "Thirty days notice."
+                }
             }],
             "added_terms": ["Automatic renewal."],
             "removed_terms": ["Liability cap."],
@@ -80,7 +86,8 @@ class DocumentTest(unittest.TestCase):
     def test_extracts_txt_and_docx(self):
         raw = b"Carrefour services agreement"
         text, digest = extract_document("agreement.txt", raw)
-        self.assertEqual(text, raw.decode())
+        self.assertIn("[SOURCE lines=1-1]", text)
+        self.assertIn(raw.decode(), text)
         self.assertEqual(digest, hashlib.sha256(raw).hexdigest())
 
         document = Document()
@@ -149,6 +156,8 @@ class DocumentTest(unittest.TestCase):
         )
 
         self.assertEqual(comparison.material_differences[0].significance, "high")
+        self.assertTrue(comparison.material_differences[0].candidate_evidence.verified)
+        self.assertTrue(comparison.material_differences[0].reference_evidence.verified)
         self.assertFalse(duplicate)
         self.assertTrue(second_duplicate)
         self.assertEqual(first["id"], second["id"])

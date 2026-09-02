@@ -116,6 +116,12 @@ main { max-width: 1500px; margin: 0 auto; padding: 26px 42px 50px; }
 .difference-row strong { font-size: .82rem; }
 .difference-row p { margin: 3px 0; }
 .difference-row small { color: var(--ink); }
+.evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.evidence { display: grid; gap: 5px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.evidence strong { color: var(--primary); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; }
+.evidence q { color: var(--ink); font-size: .72rem; line-height: 1.45; }
+.evidence span { color: var(--muted); font-size: .64rem; }
+.evidence.unverified { border-color: #e8bd8c; background: #fff9f1; }
 .risk { align-self: start; padding: 4px 6px; border-radius: 6px; text-align: center; text-transform: uppercase; font-size: .62rem; font-weight: 850; background: #e5ece8; }
 .risk.high { color: var(--danger); background: #fde8e3; }
 .risk.medium { color: #79520a; background: #fff2d5; }
@@ -137,6 +143,7 @@ main { max-width: 1500px; margin: 0 auto; padding: 26px 42px 50px; }
   .schedule-actions { flex-wrap: wrap; }
   .run-row { grid-template-columns: 1fr auto; }
   .run-row time { text-align: left; }
+  .evidence-grid { grid-template-columns: 1fr; }
   .status-grid { grid-template-columns: 1fr; }
 }
 

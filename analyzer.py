@@ -83,7 +83,10 @@ class EmailAnalyzer:
                         "recommendation (review, revise, approve, or reject), recommendation_reason, "
                         "and confidence. Each material difference has topic, reference_position, "
                         "candidate_position, significance (low, medium, or high), impact, and "
-                        "suggested_resolution. All other collection fields are arrays of short strings."
+                        "suggested_resolution, candidate_evidence, and reference_evidence. Each evidence "
+                        "object has location copied from the nearest [SOURCE ...] marker and excerpt copied "
+                        "verbatim from that source. Never invent an excerpt; use null when unsupported. "
+                        "All other collection fields are arrays of short strings."
                     ),
                 },
                 {
@@ -100,7 +103,19 @@ class EmailAnalyzer:
         content = response.choices[0].message.content
         if not content:
             raise ValueError("The model returned an empty document comparison")
-        return DocumentComparison.model_validate(json.loads(content))
+        comparison = DocumentComparison.model_validate(json.loads(content))
+        for difference in comparison.material_differences:
+            self._verify_evidence(difference.candidate_evidence, candidate_text)
+            self._verify_evidence(difference.reference_evidence, reference_text)
+        return comparison
+
+    @staticmethod
+    def _verify_evidence(evidence, source_text: str):
+        if evidence is None:
+            return
+        normalized_excerpt = " ".join(evidence.excerpt.split()).casefold()
+        normalized_source = " ".join(source_text.split()).casefold()
+        evidence.verified = bool(normalized_excerpt and normalized_excerpt in normalized_source)
 
     def create_revision_request_draft(self, comparison: dict, human_note: str) -> RevisionRequestDraft:
         response = self.client.chat.completions.create(

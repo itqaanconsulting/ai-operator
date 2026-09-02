@@ -26,14 +26,33 @@ def extract_document(filename: str, data: bytes) -> tuple[str, str]:
         reader = PdfReader(BytesIO(data))
         if reader.is_encrypted:
             raise ValueError("Encrypted PDFs are not supported")
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        page_parts = []
+        for index, page in enumerate(reader.pages, start=1):
+            page_text = (page.extract_text() or "").strip()
+            if page_text:
+                page_parts.append(f"[SOURCE page={index}]\n{page_text}")
+        text = "\n\n".join(page_parts)
     elif extension == ".docx":
         document = Document(BytesIO(data))
-        parts = [paragraph.text for paragraph in document.paragraphs]
-        parts.extend(cell.text for table in document.tables for row in table.rows for cell in row.cells)
+        parts = [
+            f"[SOURCE paragraph={index}]\n{paragraph.text}"
+            for index, paragraph in enumerate(document.paragraphs, start=1)
+            if paragraph.text.strip()
+        ]
+        parts.extend(
+            f"[SOURCE table={table_index} row={row_index}]\n" + " | ".join(cell.text for cell in row.cells)
+            for table_index, table in enumerate(document.tables, start=1)
+            for row_index, row in enumerate(table.rows, start=1)
+        )
         text = "\n".join(parts)
     else:
-        text = data.decode("utf-8-sig", errors="replace")
+        raw_text = data.decode("utf-8-sig", errors="replace")
+        lines = raw_text.splitlines() or [raw_text]
+        text = "\n\n".join(
+            f"[SOURCE lines={start}-{min(start + 39, len(lines))}]\n" +
+            "\n".join(lines[start - 1:start + 39])
+            for start in range(1, len(lines) + 1, 40)
+        )
 
     text = text.strip()
     if not text:
