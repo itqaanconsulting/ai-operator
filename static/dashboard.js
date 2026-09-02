@@ -19,6 +19,8 @@ const elements = {
   revisionDrafts: document.querySelector("#revision-drafts"),
   automationRuns: document.querySelector("#automation-runs"),
   reviewQueue: document.querySelector("#review-queue"),
+  briefingContent: document.querySelector("#briefing-content"),
+  briefingButton: document.querySelector("#briefing-button"),
 };
 
 async function api(path, options = {}) {
@@ -286,6 +288,27 @@ async function generateStatus() {
   finally { elements.statusButton.disabled = false; }
 }
 
+async function generateExecutiveBriefing() {
+  elements.briefingButton.disabled = true;
+  elements.briefingContent.className = "empty-state";
+  elements.briefingContent.textContent = "Generating a grounded cross-system briefing…";
+  try {
+    const brief = await api("/automation/executive-briefing", { method: "POST" });
+    elements.briefingContent.className = "briefing-content";
+    elements.briefingContent.innerHTML = `
+      <div class="briefing-lead"><h3>${escapeHtml(brief.headline)}</h3><p>${escapeHtml(brief.executive_summary)}</p></div>
+      <div class="status-grid">
+        ${listBlock("Top priorities", brief.top_priorities, true)}
+        ${listBlock("Recommended next actions", brief.recommended_next_actions, true)}
+        ${listBlock("Urgent risks", brief.urgent_risks)}
+        ${listBlock("Upcoming meetings", brief.upcoming_meetings)}
+        ${listBlock("Automation health", brief.automation_health)}
+        ${listBlock("Missing information", brief.missing_information)}
+      </div>`;
+  } catch (error) { elements.briefingContent.textContent = error.message; notify(error.message, true); }
+  finally { elements.briefingButton.disabled = false; }
+}
+
 async function runMonitor() {
   try {
     const result = await api("/monitor/open-loops", { method: "POST", body: JSON.stringify({ due_within_days: 3 }) });
@@ -443,6 +466,7 @@ function switchView(view) {
 document.querySelector("#refresh-button").addEventListener("click", refresh);
 document.querySelector("#monitor-button").addEventListener("click", runMonitor);
 elements.statusButton.addEventListener("click", generateStatus);
+elements.briefingButton.addEventListener("click", generateExecutiveBriefing);
 document.querySelector("#document-upload-form").addEventListener("submit", uploadDocument);
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);

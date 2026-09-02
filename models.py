@@ -216,3 +216,14 @@ class ContractAutomationScheduleRequest(BaseModel):
     interval_minutes: int = Field(default=15, ge=1, le=1440)
     label: str = Field(default="AI-Operator", min_length=1, max_length=100)
     max_messages: int = Field(default=10, ge=1, le=50)
+
+
+class ExecutiveBriefing(BaseModel):
+    headline: str
+    executive_summary: str
+    top_priorities: list[str] = Field(default_factory=list)
+    urgent_risks: list[str] = Field(default_factory=list)
+    upcoming_meetings: list[str] = Field(default_factory=list)
+    automation_health: list[str] = Field(default_factory=list)
+    recommended_next_actions: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)

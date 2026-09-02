@@ -6,6 +6,7 @@ from openai import OpenAI
 from models import (
     DocumentAnalysis, DocumentComparison, EmailAnalysis, EmailRequest,
     EntityStatusBrief, RevisionRequestDraft,
+    ExecutiveBriefing,
 )
 
 
@@ -144,6 +145,32 @@ class EmailAnalyzer:
         if not content:
             raise ValueError("The model returned an empty revision request draft")
         return RevisionRequestDraft.model_validate(json.loads(content))
+
+    def create_executive_briefing(self, context: dict) -> ExecutiveBriefing:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a cautious AI executive operator. Create a concise briefing using "
+                        "only the supplied structured records. Prioritize overdue commitments and "
+                        "high-risk document reviews. Distinguish business risks from automation health. "
+                        "Do not invent events, decisions, deadlines, or completed actions. Return JSON "
+                        "with headline, executive_summary, top_priorities, urgent_risks, upcoming_meetings, "
+                        "automation_health, recommended_next_actions, and missing_information. All fields "
+                        "except headline and executive_summary are arrays of short strings."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(context, default=str)},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("The model returned an empty executive briefing")
+        return ExecutiveBriefing.model_validate(json.loads(content))
 
     def create_status_brief(self, context: dict) -> EntityStatusBrief:
         response = self.client.chat.completions.create(

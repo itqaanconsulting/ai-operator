@@ -255,6 +255,11 @@ class Database:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 INSERT OR IGNORE INTO automation_schedules (id) VALUES (1);
+                CREATE TABLE IF NOT EXISTS executive_briefings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    briefing_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -734,6 +739,60 @@ class Database:
                 "created_at": row["created_at"],
             })
         return sorted(queue, key=lambda item: (-item["priority_score"], item["created_at"]))
+
+    def executive_briefing_context(self):
+        with self.connect() as connection:
+            commitments = connection.execute(
+                """SELECT c.id, c.title, c.company_or_project, c.deadline, c.urgency,
+                          c.status, c.created_at
+                   FROM commitments c WHERE c.status = 'open'
+                   ORDER BY c.deadline, c.id LIMIT 50"""
+            ).fetchall()
+            meetings = connection.execute(
+                """SELECT ce.id, ce.title, ce.start_at, ce.end_at, ce.location,
+                          GROUP_CONCAT(DISTINCT e.name) AS entity_names
+                   FROM calendar_events ce
+                   LEFT JOIN calendar_event_entities cee ON cee.calendar_event_id = ce.id
+                   LEFT JOIN entities e ON e.id = cee.entity_id
+                   WHERE ce.status != 'cancelled' AND ce.start_at >= CURRENT_TIMESTAMP
+                   GROUP BY ce.id ORDER BY ce.start_at LIMIT 20"""
+            ).fetchall()
+            runs = connection.execute(
+                """SELECT id, workflow, status, result_json, error_message,
+                          started_at, finished_at FROM automation_runs
+                   ORDER BY id DESC LIMIT 10"""
+            ).fetchall()
+            decisions = connection.execute(
+                """SELECT d.title, d.decision, d.status, d.decided_at, e.name AS entity_name
+                   FROM decisions d JOIN entities e ON e.id = d.entity_id
+                   ORDER BY d.decided_at DESC LIMIT 20"""
+            ).fetchall()
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "open_commitments": [dict(row) for row in commitments],
+            "document_review_queue": self.document_review_queue(),
+            "upcoming_meetings": [dict(row) for row in meetings],
+            "recent_automation_runs": [dict(row) for row in runs],
+            "recent_decisions": [dict(row) for row in decisions],
+        }
+
+    def save_executive_briefing(self, briefing):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO executive_briefings (briefing_json) VALUES (?)",
+                (briefing.model_dump_json(),),
+            )
+            row = connection.execute(
+                "SELECT * FROM executive_briefings WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    def list_executive_briefings(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM executive_briefings ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def decide_document_comparison(self, comparison_id: int, decision: str, note: str):
         allowed = {"approved", "revision_requested", "rejected"}

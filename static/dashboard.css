@@ -63,6 +63,11 @@ main { max-width: 1500px; margin: 0 auto; padding: 26px 42px 50px; }
 .button.reject { background: #f5e7e7; color: var(--danger); }
 .button.execute { background: #e5ecff; color: #274b9b; }
 .status-panel { min-height: 250px; }
+.executive-briefing-panel { border-color: #cbdba1; }
+.briefing-content { padding: 22px; }
+.briefing-lead { padding: 17px; margin-bottom: 18px; color: white; background: var(--ink); border-radius: 11px; }
+.briefing-lead h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.briefing-lead p { color: #c6d5d0; font-size: .82rem; line-height: 1.5; }
 .status-content { padding: 22px; }
 .status-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px 28px; }
 .status-block h3 { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; margin: 0 0 7px; }

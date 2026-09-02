@@ -150,6 +150,12 @@ differences, missing information, the AI recommendation, and waiting time. The
 dashboard explains every priority reason; the score orders human work but never
 makes the final decision.
 
+`POST /automation/executive-briefing` creates a grounded cross-system briefing
+from open commitments, prioritized document reviews, upcoming meetings, recent
+decisions, and automation-run health. It returns priorities, urgent risks,
+recommended next actions, and missing information, then stores the briefing for
+audit/history. It summarizes records only and performs no action.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.
