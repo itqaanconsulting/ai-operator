@@ -1,7 +1,7 @@
 const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
-  contractSchedule: null, automationRuns: [],
+  contractSchedule: null, automationRuns: [], reviewQueue: [],
 };
 
 const elements = {
@@ -18,6 +18,7 @@ const elements = {
   comparisons: document.querySelector("#comparisons"),
   revisionDrafts: document.querySelector("#revision-drafts"),
   automationRuns: document.querySelector("#automation-runs"),
+  reviewQueue: document.querySelector("#review-queue"),
 };
 
 async function api(path, options = {}) {
@@ -221,11 +222,12 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, runs] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, runs, reviewQueue] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
       api("/automation/contract-intake/schedule"),
       api("/automation/runs"),
+      api("/automation/review-queue"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
@@ -237,11 +239,13 @@ async function refresh() {
     state.revisionDrafts = drafts.drafts;
     state.contractSchedule = schedule;
     state.automationRuns = runs.runs;
+    state.reviewQueue = reviewQueue.items;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
     renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
     renderAutomationRuns();
+    renderReviewQueue();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -358,6 +362,19 @@ function renderAutomationRuns() {
       <time>${escapeHtml(run.finished_at || run.started_at)}</time>
     </article>`;
   }).join("") : '<p class="empty-state">No automation runs yet.</p>';
+}
+
+function renderReviewQueue() {
+  elements.reviewQueue.innerHTML = state.reviewQueue.length ? state.reviewQueue.map(item => `
+    <article class="review-queue-row">
+      <span class="priority ${escapeHtml(item.priority)}">${escapeHtml(item.priority)}</span>
+      <div><strong>${escapeHtml(item.candidate_filename)}</strong><p>${escapeHtml(item.entity_names || "Unmatched entity")} · AI recommends ${escapeHtml(item.recommendation)}</p></div>
+      <ul>${item.priority_reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>
+      <button class="button secondary" data-jump-comparison="${item.comparison_id}">Review comparison</button>
+    </article>`).join("") : '<p class="empty-state">Nothing is waiting for human review.</p>';
+  elements.reviewQueue.querySelectorAll("[data-jump-comparison]").forEach(button => button.addEventListener("click", () => {
+    document.querySelector(`[data-comparison="${button.dataset.jumpComparison}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
 }
 
 async function toggleSchedule() {

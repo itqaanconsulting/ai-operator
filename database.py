@@ -3,6 +3,7 @@ import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import datetime, timezone
 
 from models import (
     ActionStatus, DocumentAnalysis, DocumentComparison, EmailAnalysis, RevisionRequestDraft,
@@ -679,6 +680,60 @@ class Database:
                    GROUP BY dc.id ORDER BY dc.created_at DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def document_review_queue(self):
+        pending = [
+            row for row in self.list_document_comparisons()
+            if row["review_status"] == "pending_review"
+        ]
+        queue = []
+        now = datetime.now(timezone.utc)
+        for row in pending:
+            comparison = json.loads(row["comparison_json"])
+            differences = comparison.get("material_differences") or []
+            high_count = sum(item.get("significance") == "high" for item in differences)
+            medium_count = sum(item.get("significance") == "medium" for item in differences)
+            missing_count = len(comparison.get("missing_information") or [])
+            recommendation = comparison.get("recommendation", "review")
+            try:
+                created = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                age_days = max(0, (now - created).days)
+            except (TypeError, ValueError):
+                age_days = 0
+            score = (
+                high_count * 30 + medium_count * 10 + missing_count * 5 + min(age_days, 10)
+                + {"reject": 25, "revise": 15, "review": 5, "approve": 0}.get(recommendation, 5)
+            )
+            priority = "critical" if score >= 60 else "high" if score >= 30 else "normal"
+            reasons = []
+            if high_count:
+                reasons.append(f"{high_count} high-significance difference(s)")
+            if medium_count:
+                reasons.append(f"{medium_count} medium-significance difference(s)")
+            if missing_count:
+                reasons.append(f"{missing_count} missing-information item(s)")
+            if recommendation in {"reject", "revise"}:
+                reasons.append(f"AI recommendation: {recommendation}")
+            if not reasons:
+                reasons.append("Pending human confirmation")
+            queue.append({
+                "comparison_id": row["id"],
+                "candidate_filename": row["candidate_filename"],
+                "reference_filename": row["reference_filename"],
+                "entity_names": row.get("entity_names"),
+                "priority": priority,
+                "priority_score": score,
+                "priority_reasons": reasons,
+                "recommendation": recommendation,
+                "high_risk_count": high_count,
+                "medium_risk_count": medium_count,
+                "missing_information_count": missing_count,
+                "waiting_days": age_days,
+                "created_at": row["created_at"],
+            })
+        return sorted(queue, key=lambda item: (-item["priority_score"], item["created_at"]))
 
     def decide_document_comparison(self, comparison_id: int, decision: str, note: str):
         allowed = {"approved", "revision_requested", "rejected"}

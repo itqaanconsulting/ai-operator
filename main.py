@@ -45,7 +45,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.17.0")
+app = FastAPI(title="AI Commitment Operator", version="0.18.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -96,6 +96,7 @@ def health():
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
         "document_evidence_verification_enabled": True,
+        "prioritized_human_review_queue_enabled": True,
         "document_human_review_required": True,
         "revision_draft_enabled": True,
         "revision_gmail_draft_enabled": True,
@@ -253,6 +254,11 @@ def run_contract_intake_automation(request: GmailAttachmentImportRequest):
 @app.get("/automation/runs")
 def list_automation_runs():
     return {"runs": database.list_automation_runs()}
+
+
+@app.get("/automation/review-queue")
+def get_automation_review_queue():
+    return {"items": database.document_review_queue()}
 
 
 @app.get("/automation/contract-intake/schedule")

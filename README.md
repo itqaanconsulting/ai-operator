@@ -144,6 +144,12 @@ result, and error. The local scheduler atomically claims due work so overlapping
 runs cannot start. It performs only the safe intake-to-review workflow; human
 decisions and Gmail draft creation remain separate approval-gated actions.
 
+`GET /automation/review-queue` turns pending comparisons into a transparent
+priority queue. Its deterministic score weighs high- and medium-significance
+differences, missing information, the AI recommendation, and waiting time. The
+dashboard explains every priority reason; the score orders human work but never
+makes the final decision.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.

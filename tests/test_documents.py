@@ -167,6 +167,11 @@ class DocumentTest(unittest.TestCase):
             "document_comparison",
             {event["type"] for event in self.db.entity_timeline(entity_id)["events"]},
         )
+        queue = self.db.document_review_queue()
+        queued = next(item for item in queue if item["comparison_id"] == first["id"])
+        self.assertEqual(queued["priority"], "high")
+        self.assertEqual(queued["high_risk_count"], 1)
+        self.assertIn("AI recommendation: revise", queued["priority_reasons"])
 
     def test_human_trusted_reference_is_selected_by_entity_and_type(self):
         analysis = DocumentAnalysis(
