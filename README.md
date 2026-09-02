@@ -46,6 +46,8 @@ uvicorn main:app --reload
 
 Open `http://127.0.0.1:8000/docs` to use the interactive API documentation.
 
+For the operator dashboard, open `http://127.0.0.1:8000/dashboard`.
+
 ## Analyze an email
 
 Call `POST /analyze-email`:
@@ -200,6 +202,21 @@ Completing a commitment records an audit event and automatically rejects any
 still-pending monitor reminder for that commitment. The monitor is currently
 triggered through the API; a scheduler can invoke the same operation later.
 
+## Operator dashboard
+
+The dashboard provides a client-friendly interface for the existing controlled
+workflows:
+
+- View entity, commitment, approval, and overdue counts.
+- Select a company or project and generate its grounded AI status brief.
+- Review open commitments and mark completed work.
+- Approve or reject proposed actions.
+- Create a Gmail draft from an approved `draft_reply` action.
+- Run the open-loop monitor and inspect its generated reminders.
+
+The dashboard calls the same audited API endpoints documented above. It does not
+introduce automatic email sending or bypass approval checks.
+
 ## Tests
 
 ```powershell
@@ -214,6 +231,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Test open-loop monitoring with one overdue and one approaching commitment.
+1. Test the complete pilot from Gmail import through dashboard approval.
 2. Schedule the monitor to run periodically.
-3. Build a small dashboard for the inbox, approvals, and open loops.
+3. Add Google Calendar as the second external context source.

@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from analyzer import EmailAnalyzer
 from database import Database
@@ -25,7 +28,9 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.5.0")
+app = FastAPI(title="AI Commitment Operator", version="0.6.0")
+static_directory = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
 
 @app.on_event("startup")
@@ -41,6 +46,11 @@ def health():
         "gmail_manual_import_enabled": True,
         "automatic_sending_enabled": False,
     }
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    return FileResponse(static_directory / "dashboard.html")
 
 
 @app.post("/analyze-email", response_model=AnalysisResult)

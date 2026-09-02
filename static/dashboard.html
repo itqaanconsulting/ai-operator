@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Commitment Operator</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Executive operations</p>
+      <h1>AI Commitment Operator</h1>
+    </div>
+    <div class="topbar-actions">
+      <span class="safety-badge">Automatic sending off</span>
+      <button id="refresh-button" class="button secondary">Refresh</button>
+      <button id="monitor-button" class="button primary">Run open-loop monitor</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="metrics" aria-label="Operator summary">
+      <article><span id="entity-count">—</span><p>Entities</p></article>
+      <article><span id="commitment-count">—</span><p>Open commitments</p></article>
+      <article><span id="approval-count">—</span><p>Pending approvals</p></article>
+      <article><span id="overdue-count">—</span><p>Overdue</p></article>
+    </section>
+
+    <div id="notification" class="notification" role="status" hidden></div>
+
+    <section class="workspace">
+      <aside class="panel entity-panel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Context</p><h2>Companies & projects</h2></div>
+        </div>
+        <div id="entities" class="entity-list"></div>
+      </aside>
+
+      <section class="main-column">
+        <article class="panel status-panel">
+          <div class="panel-heading status-heading">
+            <div><p class="eyebrow">Grounded intelligence</p><h2 id="status-title">Entity status</h2></div>
+            <button id="status-button" class="button secondary" disabled>Generate status brief</button>
+          </div>
+          <div id="status-content" class="empty-state">
+            Select a company or project to inspect its operational context.
+          </div>
+        </article>
+
+        <div class="two-column">
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Open loops</p><h2>Commitments</h2></div></div>
+            <div id="commitments" class="item-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Human control</p><h2>Actions</h2></div></div>
+            <div id="actions" class="item-list"></div>
+          </article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
+  <script src="/static/dashboard.js" defer></script>
+</body>
+</html>
