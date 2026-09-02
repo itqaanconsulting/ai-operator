@@ -294,6 +294,9 @@ The same inbox run also imports supported Gmail attachments. Documents are
 analyzed automatically and, when a trusted reference exists, compared and placed
 in the human document review queue.
 
+The dashboard shows the latest inbox run below **Scan Gmail**, including new and
+skipped messages, routed documents, errors, and completion time.
+
 Reply actions include an editable subject/body preview. Saving changes only
 updates the local proposal; the approved **Create Gmail draft** action creates a
 draft in Gmail and never sends it.

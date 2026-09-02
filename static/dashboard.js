@@ -244,6 +244,7 @@ async function refresh() {
     renderSchedule();
     renderInboxSchedule();
     renderAutomationRuns();
+    renderLatestInboxRun();
     renderReviewQueue();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
@@ -494,6 +495,18 @@ function renderAutomationRuns() {
       <time>${escapeHtml(run.finished_at || run.started_at)}</time>
     </article>`;
   }).join("") : '<p class="empty-state">No automation runs yet.</p>';
+}
+
+function renderLatestInboxRun() {
+  const target = document.querySelector("#last-inbox-run");
+  const run = state.automationRuns.find(item => item.workflow === "inbox_automation");
+  if (!run) { target.textContent = "No inbox scan recorded."; return; }
+  const result = parseJson(run.result_json);
+  const documents = result.document_automation || {};
+  const documentCount = (documents.review_ready?.length || 0) + (documents.analyzed_only?.length || 0);
+  const errorCount = (result.errors?.length || 0) + (documents.errors?.length || 0);
+  const finished = run.finished_at || run.started_at;
+  target.textContent = `Last scan #${run.id} · ${result.processed?.length || 0} new · ${result.skipped?.length || 0} skipped · ${documentCount} documents · ${errorCount} errors · ${finished}`;
 }
 
 function renderReviewQueue() {
