@@ -20,8 +20,8 @@
   </header>
 
   <nav class="view-tabs" aria-label="Operator workspace">
-    <button class="view-tab active" data-view="operations">Operations</button>
-    <button class="view-tab" data-view="documents">Document review</button>
+    <button class="view-tab" data-view="operations">Business operations</button>
+    <button class="view-tab active" data-view="documents">AI document automation</button>
   </nav>
 
   <main>
@@ -35,7 +35,7 @@
 
     <div id="notification" class="notification" role="status" hidden></div>
 
-    <section id="operations-view" class="workspace app-view">
+    <section id="operations-view" class="workspace app-view" hidden>
       <aside class="panel entity-panel">
         <div class="panel-heading">
           <div><p class="eyebrow">Context</p><h2>Companies & projects</h2></div>
@@ -73,10 +73,27 @@
       </section>
     </section>
 
-    <section id="documents-view" class="document-workbench app-view" hidden>
+    <section id="documents-view" class="document-workbench app-view">
+      <article class="workflow-hero">
+        <div>
+          <p class="eyebrow">Guided AI automation</p>
+          <h2>From incoming contract to a controlled next action</h2>
+          <p>The operator does the repetitive reading and comparison. You keep control over trust, decisions, recipients, and every external action.</p>
+        </div>
+        <div class="safety-callout"><strong>Human control stays on</strong><span>AI prepares work. It never signs or sends.</span></div>
+      </article>
+
+      <ol class="workflow-steps" aria-label="Document automation workflow">
+        <li><span>1</span><div><strong>Intake</strong><small>Upload or monitor Gmail</small></div></li>
+        <li><span>2</span><div><strong>Baseline</strong><small>Choose a trusted reference</small></div></li>
+        <li><span>3</span><div><strong>AI compare</strong><small>Find material changes</small></div></li>
+        <li><span>4</span><div><strong>Human review</strong><small>Approve, revise, or reject</small></div></li>
+        <li><span>5</span><div><strong>Follow-up</strong><small>Create an approved draft</small></div></li>
+      </ol>
+
       <article class="panel document-intake">
         <div class="panel-heading">
-          <div><p class="eyebrow">Controlled intake</p><h2>Bring documents into review</h2></div>
+          <div><p class="step-label">Step 1 · Intake</p><h2>Bring contracts into the automation</h2><p class="heading-help">Run Gmail monitoring or upload one test document manually.</p></div>
           <button id="gmail-attachments-button" class="button primary">Run Gmail contract automation</button>
         </div>
         <form id="document-upload-form" class="upload-form">
@@ -97,24 +114,29 @@
         </div>
       </article>
 
+      <article class="panel">
+        <div class="panel-heading"><div><p class="step-label">Automation log</p><h2>What has the operator done?</h2><p class="heading-help">Every manual and scheduled run remains visible and auditable.</p></div></div>
+        <div id="automation-runs" class="run-list"></div>
+      </article>
+
       <div class="document-grid">
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">Knowledge base</p><h2>Documents</h2></div></div>
+          <div class="panel-heading"><div><p class="step-label">Step 2 · Select baseline</p><h2>Documents awaiting context</h2><p class="heading-help">Mark only a manually approved agreement as trusted.</p></div></div>
           <div id="documents" class="item-list"></div>
         </article>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">Human-designated</p><h2>Trusted references</h2></div></div>
+          <div class="panel-heading"><div><p class="step-label">Human-designated</p><h2>Trusted references</h2><p class="heading-help">These are the only baselines automation may select.</p></div></div>
           <div id="trusted-references" class="item-list"></div>
         </article>
       </div>
 
       <article class="panel">
-        <div class="panel-heading"><div><p class="eyebrow">Material change review</p><h2>Comparisons</h2></div></div>
+        <div class="panel-heading"><div><p class="step-label">Steps 3–4 · AI comparison + human review</p><h2>Review material changes</h2><p class="heading-help">AI explains differences; you record the final business decision.</p></div></div>
         <div id="comparisons" class="comparison-list"></div>
       </article>
 
       <article class="panel">
-        <div class="panel-heading"><div><p class="eyebrow">Approval-gated follow-up</p><h2>Revision request drafts</h2></div></div>
+        <div class="panel-heading"><div><p class="step-label">Step 5 · Controlled follow-up</p><h2>Revision request drafts</h2><p class="heading-help">Approve wording and recipient before creating a Gmail draft. Nothing is sent.</p></div></div>
         <div id="revision-drafts" class="item-list"></div>
       </article>
     </section>

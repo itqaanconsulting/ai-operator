@@ -1,7 +1,7 @@
 const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
-  contractSchedule: null,
+  contractSchedule: null, automationRuns: [],
 };
 
 const elements = {
@@ -17,6 +17,7 @@ const elements = {
   trustedReferences: document.querySelector("#trusted-references"),
   comparisons: document.querySelector("#comparisons"),
   revisionDrafts: document.querySelector("#revision-drafts"),
+  automationRuns: document.querySelector("#automation-runs"),
 };
 
 async function api(path, options = {}) {
@@ -206,10 +207,11 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, runs] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
       api("/automation/contract-intake/schedule"),
+      api("/automation/runs"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
@@ -220,10 +222,12 @@ async function refresh() {
     state.comparisons = comparisons.comparisons;
     state.revisionDrafts = drafts.drafts;
     state.contractSchedule = schedule;
+    state.automationRuns = runs.runs;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
     renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
+    renderAutomationRuns();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -329,6 +333,19 @@ function renderSchedule() {
   button.className = `button ${enabled ? "reject" : "approve"}`;
 }
 
+function renderAutomationRuns() {
+  elements.automationRuns.innerHTML = state.automationRuns.length ? state.automationRuns.slice(0, 8).map(run => {
+    const result = parseJson(run.result_json);
+    return `<article class="run-row">
+      <div><strong>Run #${run.id}</strong><span>${escapeHtml(result.trigger || "unknown trigger")}</span></div>
+      <span class="pill ${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+      <span>${result.review_ready?.length || 0} review-ready</span>
+      <span>${result.analyzed_only?.length || 0} awaiting reference</span>
+      <time>${escapeHtml(run.finished_at || run.started_at)}</time>
+    </article>`;
+  }).join("") : '<p class="empty-state">No automation runs yet.</p>';
+}
+
 async function toggleSchedule() {
   const current = state.contractSchedule;
   if (!current) return;
@@ -388,6 +405,8 @@ async function executeRevisionDelivery(id) {
 function switchView(view) {
   document.querySelectorAll(".app-view").forEach(section => { section.hidden = !section.id.startsWith(view); });
   document.querySelectorAll(".view-tab").forEach(button => button.classList.toggle("active", button.dataset.view === view));
+  document.querySelector(".metrics").hidden = view !== "operations";
+  document.querySelector("#monitor-button").hidden = view !== "operations";
 }
 
 document.querySelector("#refresh-button").addEventListener("click", refresh);
@@ -397,4 +416,5 @@ document.querySelector("#document-upload-form").addEventListener("submit", uploa
 document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
+switchView("documents");
 refresh();
