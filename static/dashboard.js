@@ -1,13 +1,12 @@
 const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
-  contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [],
+  contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [], workQueue: [],
 };
 
 const elements = {
   entities: document.querySelector("#entities"),
   commitments: document.querySelector("#commitments"),
-  actions: document.querySelector("#actions"),
   calendarEvents: document.querySelector("#calendar-events"),
   notification: document.querySelector("#notification"),
   statusTitle: document.querySelector("#status-title"),
@@ -68,51 +67,32 @@ function renderEntities() {
 }
 
 function renderCommitments() {
-  const open = state.commitments;
-  elements.commitments.innerHTML = open.length ? open.map(item => `
-    <article class="list-card">
-      <h3>${escapeHtml(item.title)}</h3>
-      <div class="meta">
-        <span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span>
-        <span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">
-          ${escapeHtml(deadlineState(item.deadline))}
-        </span>
-        ${item.company_or_project ? `<span>${escapeHtml(item.company_or_project)}</span>` : ""}
-      </div>
-      <div class="card-actions">
-        <button class="button secondary" data-complete="${item.id}">Mark complete</button>
-      </div>
-    </article>`).join("") : '<p class="empty-state">No open commitments.</p>';
+  elements.commitments.innerHTML = state.workQueue.length ? state.workQueue.map(group => `
+    <section class="work-group">
+      <header class="work-group-header"><strong>${escapeHtml(group.email.subject)}</strong><span>${group.commitments.length} item${group.commitments.length === 1 ? "" : "s"}</span></header>
+      ${group.commitments.map(item => {
+        const action = group.actions.find(candidate => candidate.commitment_id === item.id && candidate.action_type !== "open_loop_review")
+          || group.actions.find(candidate => candidate.commitment_id === item.id);
+        const payload = action ? parseJson(action.payload_json) : {};
+        return `<article class="work-item">
+          <h3>${escapeHtml(item.title)}</h3>
+          <div class="meta"><span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span><span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">${escapeHtml(deadlineState(item.deadline))}</span>${payload.work_item_kind ? `<span class="pill">${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}</div>
+          ${action ? `<div class="proposed-action"><span>Proposed action</span><p>${escapeHtml(action.description)}</p></div>` : ""}
+          <div class="card-actions">
+            ${action?.status === "pending_approval" ? `<button class="button approve" data-approve="${action.id}">Approve</button><button class="button reject" data-reject="${action.id}">Reject</button>` : ""}
+            ${action?.status === "approved" && action.action_type === "draft_reply" ? `<button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
+            ${action?.status === "approved" && action.action_type !== "draft_reply" ? '<span class="pill approved">Approved · manual action</span>' : ""}
+            <button class="button secondary" data-complete="${item.id}">Mark complete</button>
+          </div>
+        </article>`;
+      }).join("")}
+    </section>`).join("") : '<p class="empty-state">No work needs attention.</p>';
   elements.commitments.querySelectorAll("[data-complete]").forEach(button => {
     button.addEventListener("click", () => completeCommitment(button.dataset.complete));
   });
-}
-
-function renderActions() {
-  const visible = state.actions.filter(action => ["pending_approval", "approved"].includes(action.status));
-  elements.actions.innerHTML = visible.length ? visible.map(action => {
-    const payload = parseJson(action.payload_json);
-    return `
-    <article class="list-card">
-      <h3>${escapeHtml(action.description)}</h3>
-      <div class="meta">
-        <span class="pill ${escapeHtml(action.status)}">${escapeHtml(action.status.replaceAll("_", " "))}</span>
-        <span>${escapeHtml(action.action_type.replaceAll("_", " "))}</span>
-        ${payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}
-        ${payload.work_item_kind ? `<span>${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : ""}
-      </div>
-      <div class="card-actions">
-        ${action.status === "pending_approval" ? `
-          <button class="button approve" data-approve="${action.id}">Approve</button>
-          <button class="button reject" data-reject="${action.id}">Reject</button>` : ""}
-        ${action.status === "approved" && action.action_type === "draft_reply" ? `
-          <button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
-      </div>
-    </article>`;
-  }).join("") : '<p class="empty-state">No actions need attention.</p>';
-  elements.actions.querySelectorAll("[data-approve]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.approve, "approve")));
-  elements.actions.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.reject, "reject")));
-  elements.actions.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
+  elements.commitments.querySelectorAll("[data-approve]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.approve, "approve")));
+  elements.commitments.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.reject, "reject")));
+  elements.commitments.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
 }
 
 function renderCalendarEvents() {
@@ -230,13 +210,14 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, inboxSchedule, runs, reviewQueue] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, inboxSchedule, runs, reviewQueue, workQueue] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
       api("/automation/contract-intake/schedule"),
       api("/automation/inbox/schedule"),
       api("/automation/runs"),
       api("/automation/review-queue"),
+      api("/automation/work-queue"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
@@ -250,8 +231,9 @@ async function refresh() {
     state.inboxSchedule = inboxSchedule;
     state.automationRuns = runs.runs;
     state.reviewQueue = reviewQueue.items;
+    state.workQueue = workQueue.groups;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
-    renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
+    renderEntities(); renderCommitments(); renderCalendarEvents();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
     renderInboxSchedule();

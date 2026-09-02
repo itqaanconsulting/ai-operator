@@ -51,7 +51,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.24.1")
+app = FastAPI(title="AI Commitment Operator", version="0.25.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -305,6 +305,11 @@ def list_automation_runs():
 @app.get("/automation/review-queue")
 def get_automation_review_queue():
     return {"items": database.document_review_queue()}
+
+
+@app.get("/automation/work-queue")
+def get_automation_work_queue():
+    return {"groups": database.list_work_queue()}
 
 
 @app.post("/automation/executive-briefing", response_model=ExecutiveBriefing)

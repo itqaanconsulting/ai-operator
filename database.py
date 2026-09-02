@@ -294,6 +294,21 @@ class Database:
                     ON document_comparison_entities(entity_id);
                 """
             )
+            connection.execute(
+                """UPDATE proposed_actions AS reminder
+                   SET status = 'rejected',
+                       decision_note = 'Superseded by the primary proposed action.',
+                       decided_at = CURRENT_TIMESTAMP
+                   WHERE reminder.action_type = 'open_loop_review'
+                     AND reminder.status = 'pending_approval'
+                     AND EXISTS (
+                         SELECT 1 FROM proposed_actions AS primary_action
+                         WHERE primary_action.commitment_id = reminder.commitment_id
+                           AND primary_action.id != reminder.id
+                           AND primary_action.action_type != 'open_loop_review'
+                           AND primary_action.status IN ('pending_approval', 'approved')
+                     )"""
+            )
             self._backfill_entities(connection)
 
     @staticmethod
@@ -573,6 +588,40 @@ class Database:
                 "SELECT * FROM automation_runs ORDER BY id DESC LIMIT 50"
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def list_work_queue(self):
+        commitments = self.list_rows("commitments", "open")
+        actions = [row for row in self.list_rows("proposed_actions")
+                   if row["status"] in {"pending_approval", "approved"}]
+        email_ids = sorted({row["email_id"] for row in commitments + actions if row.get("email_id")})
+        with self.connect() as connection:
+            emails = {}
+            for email_id in email_ids:
+                row = connection.execute(
+                    "SELECT id, subject, sender, created_at FROM emails WHERE id = ?", (email_id,)
+                ).fetchone()
+                if row:
+                    emails[email_id] = dict(row)
+        groups = []
+        for email_id in email_ids:
+            email = emails.get(email_id)
+            if not email:
+                continue
+            groups.append({
+                "email": email,
+                "commitments": [row for row in commitments if row["email_id"] == email_id],
+                "actions": [row for row in actions if row["email_id"] == email_id],
+            })
+        return groups
+
+    def has_active_primary_action(self, commitment_id: int):
+        with self.connect() as connection:
+            return connection.execute(
+                """SELECT 1 FROM proposed_actions WHERE commitment_id = ?
+                     AND action_type != 'open_loop_review'
+                     AND status IN ('pending_approval', 'approved') LIMIT 1""",
+                (commitment_id,),
+            ).fetchone() is not None
 
     def get_contract_schedule(self):
         with self.connect() as connection:

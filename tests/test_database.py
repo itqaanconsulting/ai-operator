@@ -63,6 +63,10 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(len(commitments), 2)
         self.assertEqual(len(actions), 2)
         self.assertIn('"scenario": "finance"', actions[0]["payload_json"])
+        queue = self.db.list_work_queue()
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]["email"]["subject"], "Invoice")
+        self.assertEqual(len(queue[0]["commitments"]), 2)
 
     def test_action_can_only_be_decided_once(self):
         request = EmailRequest(subject="Action required", body="Can you review this?")

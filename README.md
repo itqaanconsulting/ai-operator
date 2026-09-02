@@ -285,6 +285,11 @@ contracts, meetings, approvals, operations, and escalations. A single email may
 produce multiple separate work items, each with its own deadline, urgency,
 recommended action, and approval gate.
 
+The dashboard groups these items by source email in one **AI work queue**. Each
+finding is shown together with its proposed action and available approval or
+draft controls. Deadline monitoring does not create a second reminder when a
+primary action for the same work item is already pending.
+
 Ready-to-send fictional examples are available in
 [`docs/test-emails.md`](docs/test-emails.md).
 

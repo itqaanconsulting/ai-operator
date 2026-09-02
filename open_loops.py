@@ -28,6 +28,7 @@ class OpenLoopMonitor:
             "missing_deadline": [],
             "invalid_deadline": [],
             "not_due": [],
+            "covered_by_primary_action": [],
         }
         for commitment in self.database.list_open_commitments():
             result["checked"] += 1
@@ -48,6 +49,9 @@ class OpenLoopMonitor:
                 alert_type = "due_soon"
             else:
                 result["not_due"].append(commitment["id"])
+                continue
+            if self.database.has_active_primary_action(commitment["id"]):
+                result["covered_by_primary_action"].append(commitment["id"])
                 continue
             action, created = self.database.create_open_loop_alert(commitment, alert_type)
             item = {"commitment_id": commitment["id"], "action_id": action["id"],

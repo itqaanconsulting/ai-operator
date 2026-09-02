@@ -67,6 +67,22 @@ class OpenLoopMonitorTest(unittest.TestCase):
         self.assertEqual(parse_deadline("2026-09-04").date().isoformat(), "2026-09-04")
         self.assertEqual(parse_deadline("2026-09-04T10:30:00Z").tzinfo, timezone.utc)
 
+    def test_monitor_does_not_duplicate_an_existing_primary_action(self):
+        _, commitment_id, action_id = self.db.save_analysis(
+            EmailRequest(subject="Reply required", body="Please reply."),
+            EmailAnalysis(
+                category="task", summary="Reply needed", commitment_title="Reply",
+                deadline="2026-09-01", proposed_action="Draft a reply.",
+            ),
+        )
+        result = OpenLoopMonitor(self.db).run(
+            3, now=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc)
+        )
+        self.assertEqual(result["created"], [])
+        self.assertEqual(result["covered_by_primary_action"], [commitment_id])
+        self.assertEqual(len(self.db.list_rows("proposed_actions")), 1)
+        self.assertEqual(self.db.list_rows("proposed_actions")[0]["id"], action_id)
+
 
 if __name__ == "__main__":
     unittest.main()
