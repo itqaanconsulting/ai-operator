@@ -68,3 +68,11 @@ class EntityStatusBrief(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     recommended_next_action: str
     missing_information: list[str] = Field(default_factory=list)
+
+
+class EntityAliasRequest(BaseModel):
+    alias: str = Field(min_length=1, max_length=300)
+
+
+class EntityMergeRequest(BaseModel):
+    source_entity: str = Field(min_length=1, max_length=300)

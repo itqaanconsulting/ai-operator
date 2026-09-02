@@ -129,6 +129,51 @@ class DatabaseTest(unittest.TestCase):
                 title="Invalid source", decision="Do something", source_email_id=unrelated_email_id
             ))
 
+    def test_entity_merge_preserves_context_decisions_and_aliases(self):
+        self.db.save_analysis(
+            EmailRequest(subject="Account", body="Account update"),
+            EmailAnalysis(category="information", summary="Account update.",
+                          company_or_project="Carrefour"),
+        )
+        source_email_id, _, _ = self.db.save_analysis(
+            EmailRequest(subject="Campaign", body="Campaign update"),
+            EmailAnalysis(category="decision", summary="Campaign update.",
+                          company_or_project="Carrefour campaign",
+                          commitment_title="Approve campaign",
+                          proposed_action="Review campaign."),
+        )
+        target = self.db.get_entity("Carrefour")
+        source = self.db.get_entity("Carrefour campaign")
+        self.db.add_entity_alias(source["id"], "Carrefour marketing")
+        self.db.add_decision(source["id"], RecordDecisionRequest(
+            title="Campaign scope", decision="Proceed with phase one.",
+            source_email_id=source_email_id,
+        ))
+
+        merged = self.db.merge_entities(target["id"], "Carrefour campaign")
+        context = self.db.entity_context(target["id"])
+
+        self.assertEqual(merged["entity"]["name"], "Carrefour")
+        self.assertEqual(len(self.db.list_entities()), 1)
+        self.assertEqual(self.db.get_entity("Carrefour campaign")["id"], target["id"])
+        self.assertEqual(self.db.get_entity("Carrefour marketing")["id"], target["id"])
+        self.assertEqual(len(context["emails"]), 2)
+        self.assertEqual(len(context["commitments"]), 1)
+        self.assertEqual(len(context["decisions"]), 1)
+
+    def test_alias_and_merge_conflicts_are_rejected(self):
+        for name in ("Alpha", "Beta"):
+            self.db.save_analysis(
+                EmailRequest(subject=name, body="Update"),
+                EmailAnalysis(category="information", summary="Update.", company_or_project=name),
+            )
+        alpha = self.db.get_entity("Alpha")
+
+        with self.assertRaisesRegex(ValueError, "already belongs"):
+            self.db.add_entity_alias(alpha["id"], "Beta")
+        with self.assertRaisesRegex(ValueError, "same entity"):
+            self.db.merge_entities(alpha["id"], "Alpha")
+
 
 if __name__ == "__main__":
     unittest.main()

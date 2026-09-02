@@ -136,6 +136,37 @@ pending actions, decisions, blockers, missing information, and one recommended
 next action. The model is explicitly instructed not to invent facts outside the
 retrieved records.
 
+### Entity aliases and merging
+
+Add an alternate name to an existing canonical entity:
+
+`POST /entities/Carrefour/aliases`
+
+```json
+{
+  "alias": "Carrefour NL"
+}
+```
+
+The alias resolves to the same timeline and status brief. It is rejected when it
+already belongs to another entity.
+
+When two existing entities represent the same company or project, merge the
+duplicate into the canonical entity:
+
+`POST /entities/Carrefour/merge`
+
+```json
+{
+  "source_entity": "Carrefour campaign"
+}
+```
+
+The merge moves linked emails and decisions to `Carrefour`, preserves
+`Carrefour campaign` and its aliases as alternate names, removes the duplicate
+entity record, and writes an audit event. Review both timelines before merging;
+the API does not currently provide an automatic undo operation.
+
 ## Tests
 
 ```powershell
@@ -150,6 +181,6 @@ a public repository or log.
 
 ## Next steps
 
-1. Test the entity timeline and status brief with several related emails.
+1. Consolidate duplicate test entities and verify alias-based status queries.
 2. Monitor open commitments and propose deadline-based follow-ups.
 3. Build a small dashboard for the inbox, approvals, and open loops.

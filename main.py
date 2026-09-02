@@ -15,12 +15,14 @@ from models import (
     GmailImportRequest,
     RecordDecisionRequest,
     EntityStatusBrief,
+    EntityAliasRequest,
+    EntityMergeRequest,
 )
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.3.0")
+app = FastAPI(title="AI Commitment Operator", version="0.4.0")
 
 
 @app.on_event("startup")
@@ -155,6 +157,25 @@ def _entity_or_404(entity_name: str):
 def get_entity_timeline(entity_name: str):
     entity = _entity_or_404(entity_name)
     return database.entity_timeline(entity["id"])
+
+
+@app.post("/entities/{entity_name}/aliases")
+def add_entity_alias(entity_name: str, request: EntityAliasRequest):
+    entity = _entity_or_404(entity_name)
+    try:
+        return database.add_entity_alias(entity["id"], request.alias)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/entities/{entity_name}/merge")
+def merge_entity(entity_name: str, request: EntityMergeRequest):
+    """Merge a source entity into the canonical entity named in the URL."""
+    target = _entity_or_404(entity_name)
+    try:
+        return database.merge_entities(target["id"], request.source_entity)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/entities/{entity_name}/decisions")

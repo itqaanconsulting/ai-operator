@@ -330,6 +330,109 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
+    def add_entity_alias(self, entity_id: int, alias: str):
+        normalized = normalize_entity_name(alias)
+        if not normalized:
+            raise ValueError("Alias must contain letters or numbers")
+        with self.connect() as connection:
+            target = connection.execute(
+                "SELECT * FROM entities WHERE id = ?", (entity_id,)
+            ).fetchone()
+            if not target:
+                raise ValueError("Target entity does not exist")
+            conflicting_entity = connection.execute(
+                "SELECT id, name FROM entities WHERE normalized_name = ?", (normalized,)
+            ).fetchone()
+            if conflicting_entity:
+                if conflicting_entity["id"] == entity_id:
+                    return {"entity_id": entity_id, "alias": alias, "already_resolves": True}
+                raise ValueError(
+                    f"Alias already belongs to entity '{conflicting_entity['name']}'"
+                )
+            existing_alias = connection.execute(
+                """SELECT a.entity_id, e.name FROM entity_aliases a
+                   JOIN entities e ON e.id = a.entity_id
+                   WHERE a.normalized_alias = ?""", (normalized,)
+            ).fetchone()
+            if existing_alias:
+                if existing_alias["entity_id"] == entity_id:
+                    return {"entity_id": entity_id, "alias": alias, "already_resolves": True}
+                raise ValueError(f"Alias already belongs to entity '{existing_alias['name']}'")
+            connection.execute(
+                """INSERT INTO entity_aliases (entity_id, alias, normalized_alias)
+                   VALUES (?, ?, ?)""", (entity_id, alias.strip(), normalized)
+            )
+            connection.execute(
+                "UPDATE entities SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (entity_id,)
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('entity', ?, 'alias_added', ?)""",
+                (entity_id, json.dumps({"alias": alias.strip()})),
+            )
+            return {"entity_id": entity_id, "alias": alias.strip(), "already_resolves": False}
+
+    def merge_entities(self, target_id: int, source_name_or_alias: str):
+        with self.connect() as connection:
+            target = connection.execute(
+                "SELECT * FROM entities WHERE id = ?", (target_id,)
+            ).fetchone()
+            if not target:
+                raise ValueError("Target entity does not exist")
+            normalized_source = normalize_entity_name(source_name_or_alias)
+            source = connection.execute(
+                """SELECT DISTINCT e.* FROM entities e
+                   LEFT JOIN entity_aliases a ON a.entity_id = e.id
+                   WHERE e.normalized_name = ? OR a.normalized_alias = ?""",
+                (normalized_source, normalized_source),
+            ).fetchone()
+            if not source:
+                raise ValueError(f"Source entity '{source_name_or_alias}' does not exist")
+            if source["id"] == target_id:
+                raise ValueError("Source and target resolve to the same entity")
+
+            source_aliases = connection.execute(
+                "SELECT alias, normalized_alias FROM entity_aliases WHERE entity_id = ?",
+                (source["id"],),
+            ).fetchall()
+            connection.execute(
+                """INSERT OR IGNORE INTO email_entities (email_id, entity_id)
+                   SELECT email_id, ? FROM email_entities WHERE entity_id = ?""",
+                (target_id, source["id"]),
+            )
+            connection.execute("DELETE FROM email_entities WHERE entity_id = ?", (source["id"],))
+            connection.execute(
+                "UPDATE decisions SET entity_id = ? WHERE entity_id = ?", (target_id, source["id"])
+            )
+            connection.execute("DELETE FROM entity_aliases WHERE entity_id = ?", (source["id"],))
+            aliases_to_move = [(source["name"], source["normalized_name"])] + [
+                (row["alias"], row["normalized_alias"]) for row in source_aliases
+            ]
+            for alias, normalized_alias in aliases_to_move:
+                connection.execute(
+                    """INSERT OR IGNORE INTO entity_aliases
+                       (entity_id, alias, normalized_alias) VALUES (?, ?, ?)""",
+                    (target_id, alias, normalized_alias),
+                )
+            connection.execute("DELETE FROM entities WHERE id = ?", (source["id"],))
+            connection.execute(
+                "UPDATE entities SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (target_id,)
+            )
+            details = {
+                "source_entity_id": source["id"],
+                "source_entity_name": source["name"],
+                "target_entity_name": target["name"],
+            }
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('entity', ?, 'merged', ?)""",
+                (target_id, json.dumps(details)),
+            )
+            result = connection.execute(
+                "SELECT * FROM entities WHERE id = ?", (target_id,)
+            ).fetchone()
+            return {"entity": dict(result), "merged": details}
+
     def add_decision(self, entity_id: int, request):
         with self.connect() as connection:
             if request.source_email_id is not None:
