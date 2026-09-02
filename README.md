@@ -285,6 +285,9 @@ contracts, meetings, approvals, operations, and escalations. A single email may
 produce multiple separate work items, each with its own deadline, urgency,
 recommended action, and approval gate.
 
+Ready-to-send fictional examples are available in
+[`docs/test-emails.md`](docs/test-emails.md).
+
 The dashboard calls the same audited API endpoints documented above. It does not
 introduce automatic email sending or bypass approval checks.
 
