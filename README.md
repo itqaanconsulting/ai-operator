@@ -123,6 +123,21 @@ The importer does not alter labels, mark messages as read, delete attachments,
 or send replies. Automatic comparison waits for a trusted reference library that
 can select an appropriate baseline.
 
+### Contract intake automation
+
+`POST /automation/contract-intake` orchestrates the full safe intake path for
+labeled Gmail attachments in one run:
+
+```text
+discover attachment -> deduplicate -> extract -> AI analyze
+-> select human-trusted reference -> AI compare -> queue human review
+```
+
+Each run is persisted and visible through `GET /automation/runs`. Documents
+without a safe reference stop at `analyzed_only` with an explicit next step.
+Documents with a match appear in `review_ready`. The automation never makes the
+human approve/revise/reject decision and never creates or sends an email.
+
 ## Company and project context
 
 Every analyzed `company_or_project` value is linked to a persistent entity.

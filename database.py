@@ -231,6 +231,15 @@ class Database:
                     candidate_document_id INTEGER NOT NULL REFERENCES documents(id),
                     reference_document_id INTEGER NOT NULL REFERENCES documents(id)
                 );
+                CREATE TABLE IF NOT EXISTS automation_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    result_json TEXT,
+                    error_message TEXT,
+                    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TEXT
+                );
                 CREATE INDEX IF NOT EXISTS idx_commitments_status_deadline ON commitments(status, deadline);
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
@@ -475,6 +484,36 @@ class Database:
                    VALUES (?, ?, ?)""",
                 (comparison_id, candidate_document_id, reference_document_id),
             )
+
+    def start_automation_run(self, workflow: str):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO automation_runs (workflow) VALUES (?)", (workflow,)
+            )
+            return cursor.lastrowid
+
+    def finish_automation_run(self, run_id: int, result: dict):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE automation_runs SET status = 'completed', result_json = ?,
+                   finished_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'""",
+                (json.dumps(result), run_id),
+            )
+
+    def fail_automation_run(self, run_id: int, error: str):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE automation_runs SET status = 'failed', error_message = ?,
+                   finished_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'""",
+                (error[:2000], run_id),
+            )
+
+    def list_automation_runs(self):
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM automation_runs ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def gmail_attachment_import_exists(self, gmail_msg_id: str, attachment_id: str):
         with self.connect() as connection:

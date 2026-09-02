@@ -19,17 +19,23 @@
     </div>
   </header>
 
+  <nav class="view-tabs" aria-label="Operator workspace">
+    <button class="view-tab active" data-view="operations">Operations</button>
+    <button class="view-tab" data-view="documents">Document review</button>
+  </nav>
+
   <main>
     <section class="metrics" aria-label="Operator summary">
       <article><span id="entity-count">—</span><p>Entities</p></article>
       <article><span id="commitment-count">—</span><p>Open commitments</p></article>
       <article><span id="approval-count">—</span><p>Pending approvals</p></article>
       <article><span id="overdue-count">—</span><p>Overdue</p></article>
+      <article><span id="document-count">—</span><p>Documents</p></article>
     </section>
 
     <div id="notification" class="notification" role="status" hidden></div>
 
-    <section class="workspace">
+    <section id="operations-view" class="workspace app-view">
       <aside class="panel entity-panel">
         <div class="panel-heading">
           <div><p class="eyebrow">Context</p><h2>Companies & projects</h2></div>
@@ -65,6 +71,43 @@
           </article>
         </div>
       </section>
+    </section>
+
+    <section id="documents-view" class="document-workbench app-view" hidden>
+      <article class="panel document-intake">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Controlled intake</p><h2>Bring documents into review</h2></div>
+          <button id="gmail-attachments-button" class="button primary">Run Gmail contract automation</button>
+        </div>
+        <form id="document-upload-form" class="upload-form">
+          <div>
+            <label for="document-file">Upload PDF, DOCX, or TXT</label>
+            <input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required>
+          </div>
+          <button class="button approve" type="submit">Analyze document</button>
+        </form>
+      </article>
+
+      <div class="document-grid">
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">Knowledge base</p><h2>Documents</h2></div></div>
+          <div id="documents" class="item-list"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">Human-designated</p><h2>Trusted references</h2></div></div>
+          <div id="trusted-references" class="item-list"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">Material change review</p><h2>Comparisons</h2></div></div>
+        <div id="comparisons" class="comparison-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">Approval-gated follow-up</p><h2>Revision request drafts</h2></div></div>
+        <div id="revision-drafts" class="item-list"></div>
+      </article>
     </section>
   </main>
 

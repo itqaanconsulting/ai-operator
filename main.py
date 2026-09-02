@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from analyzer import EmailAnalyzer
 from calendar_auth import get_calendar_service
 from calendar_operator import CalendarOperator
+from contract_automation import ContractIntakeAutomation
 from database import Database
 from document_processor import extract_document
 from gmail_auth import get_gmail_service
@@ -42,7 +43,7 @@ from open_loops import OpenLoopMonitor
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.14.0")
+app = FastAPI(title="AI Commitment Operator", version="0.15.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -60,6 +61,7 @@ def health():
         "gmail_manual_import_enabled": True,
         "gmail_attachment_import_enabled": True,
         "trusted_reference_library_enabled": True,
+        "contract_intake_automation_enabled": True,
         "automatic_sending_enabled": False,
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": False,
@@ -209,6 +211,28 @@ def import_attachments_from_gmail(request: GmailAttachmentImportRequest):
         return result
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/automation/contract-intake")
+def run_contract_intake_automation(request: GmailAttachmentImportRequest):
+    """Prepare labeled Gmail documents for human review in one controlled run."""
+    run_id = database.start_automation_run("contract_intake")
+    try:
+        attachments = GmailOperator(get_gmail_service()).list_labeled_attachments(
+            request.label, request.max_messages
+        )
+        result = ContractIntakeAutomation(database, EmailAnalyzer()).run(attachments)
+        result["run_id"] = run_id
+        database.finish_automation_run(run_id, result)
+        return result
+    except Exception as exc:
+        database.fail_automation_run(run_id, str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/automation/runs")
+def list_automation_runs():
+    return {"runs": database.list_automation_runs()}
 
 
 @app.post("/calendar/import")

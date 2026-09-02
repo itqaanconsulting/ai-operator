@@ -1,4 +1,7 @@
-const state = { entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null };
+const state = {
+  entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
+  documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
+};
 
 const elements = {
   entities: document.querySelector("#entities"),
@@ -9,11 +12,16 @@ const elements = {
   statusTitle: document.querySelector("#status-title"),
   statusContent: document.querySelector("#status-content"),
   statusButton: document.querySelector("#status-button"),
+  documents: document.querySelector("#documents"),
+  trustedReferences: document.querySelector("#trusted-references"),
+  comparisons: document.querySelector("#comparisons"),
+  revisionDrafts: document.querySelector("#revision-drafts"),
 };
 
 async function api(path, options = {}) {
+  const isForm = options.body instanceof FormData;
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { ...(isForm ? {} : { "Content-Type": "application/json" }), ...(options.headers || {}) },
     ...options,
   });
   const data = await response.json().catch(() => ({}));
@@ -113,20 +121,105 @@ function updateMetrics() {
   document.querySelector("#commitment-count").textContent = state.commitments.length;
   document.querySelector("#approval-count").textContent = state.actions.filter(a => a.status === "pending_approval").length;
   document.querySelector("#overdue-count").textContent = state.commitments.filter(c => deadlineState(c.deadline) === "overdue").length;
+  document.querySelector("#document-count").textContent = state.documents.length;
+}
+
+function parseJson(value, fallback = {}) {
+  try { return JSON.parse(value || ""); } catch { return fallback; }
+}
+
+function renderDocuments() {
+  const trustedIds = new Set(state.trustedReferences.map(item => item.document_id));
+  elements.documents.innerHTML = state.documents.length ? state.documents.map(item => `
+    <article class="list-card document-card">
+      <div class="card-title-row"><h3>${escapeHtml(item.filename)}</h3><span class="pill">${escapeHtml(item.document_type)}</span></div>
+      <p>${escapeHtml(item.summary)}</p>
+      <div class="meta"><span>${escapeHtml(item.entity_names || "Unmatched")}</span><span>Document #${item.id}</span></div>
+      <div class="card-actions">
+        ${trustedIds.has(item.id) ? '<span class="pill approved">Trusted reference</span>' : `<button class="button secondary" data-trust="${item.id}">Mark trusted</button>`}
+        <button class="button execute" data-auto-compare="${item.id}">Compare with trusted reference</button>
+      </div>
+    </article>`).join("") : '<p class="empty-state">No documents imported yet.</p>';
+  elements.documents.querySelectorAll("[data-trust]").forEach(button => button.addEventListener("click", () => markTrusted(button.dataset.trust)));
+  elements.documents.querySelectorAll("[data-auto-compare]").forEach(button => button.addEventListener("click", () => compareTrusted(button.dataset.autoCompare)));
+}
+
+function renderTrustedReferences() {
+  elements.trustedReferences.innerHTML = state.trustedReferences.length ? state.trustedReferences.map(item => `
+    <article class="list-card">
+      <h3>${escapeHtml(item.label)}</h3>
+      <p>${escapeHtml(item.filename)}</p>
+      <div class="meta"><span>${escapeHtml(item.entity_name || "Global")}</span><span>${escapeHtml(item.document_type)}</span></div>
+      <p class="supporting-copy">${escapeHtml(item.note)}</p>
+    </article>`).join("") : '<p class="empty-state">No trusted references. Human review is required before adding one.</p>';
+}
+
+function differenceList(comparison) {
+  if (!comparison.material_differences?.length) return '<p class="supporting-copy">No material differences found.</p>';
+  return comparison.material_differences.map(change => `
+    <div class="difference-row">
+      <span class="risk ${escapeHtml(change.significance)}">${escapeHtml(change.significance)}</span>
+      <div><strong>${escapeHtml(change.topic)}</strong><p>${escapeHtml(change.impact)}</p><small>${escapeHtml(change.suggested_resolution)}</small></div>
+    </div>`).join("");
+}
+
+function renderComparisons() {
+  elements.comparisons.innerHTML = state.comparisons.length ? state.comparisons.map(item => {
+    const comparison = parseJson(item.comparison_json);
+    return `<article class="comparison-card">
+      <div class="comparison-header">
+        <div><h3>${escapeHtml(item.candidate_filename)}</h3><p>vs ${escapeHtml(item.reference_filename)}</p></div>
+        <div class="recommendation"><span class="pill ${escapeHtml(comparison.recommendation)}">AI: ${escapeHtml(comparison.recommendation || "review")}</span><span class="pill ${escapeHtml(item.review_status)}">${escapeHtml(item.review_status.replaceAll("_", " "))}</span></div>
+      </div>
+      <p class="comparison-summary">${escapeHtml(comparison.executive_summary || item.executive_summary)}</p>
+      <div class="differences">${differenceList(comparison)}</div>
+      <div class="card-actions">
+        ${item.review_status === "pending_review" ? `
+          <button class="button approve" data-review="approved" data-comparison="${item.id}">Approve</button>
+          <button class="button secondary" data-review="revision_requested" data-comparison="${item.id}">Request revision</button>
+          <button class="button reject" data-review="rejected" data-comparison="${item.id}">Reject</button>` : ""}
+        ${item.review_status === "revision_requested" ? `<button class="button execute" data-revision-draft="${item.id}">Prepare revision draft</button>` : ""}
+      </div>
+    </article>`;
+  }).join("") : '<p class="empty-state">No comparisons yet.</p>';
+  elements.comparisons.querySelectorAll("[data-review]").forEach(button => button.addEventListener("click", () => reviewComparison(button.dataset.comparison, button.dataset.review)));
+  elements.comparisons.querySelectorAll("[data-revision-draft]").forEach(button => button.addEventListener("click", () => createRevisionDraft(button.dataset.revisionDraft)));
+}
+
+function renderRevisionDrafts() {
+  elements.revisionDrafts.innerHTML = state.revisionDrafts.length ? state.revisionDrafts.map(item => `
+    <article class="list-card">
+      <div class="card-title-row"><h3>${escapeHtml(item.subject)}</h3><span class="pill ${escapeHtml(item.delivery_status || "pending_approval")}">${escapeHtml(item.delivery_status || "not approved")}</span></div>
+      <p class="draft-body">${escapeHtml(item.body)}</p>
+      <div class="meta"><span>${escapeHtml(item.candidate_filename)}</span>${item.recipient ? `<span>To: ${escapeHtml(item.recipient)}</span>` : ""}</div>
+      <div class="card-actions">
+        ${!item.delivery_id ? `<button class="button approve" data-approve-draft="${item.id}">Approve recipient</button>` : ""}
+        ${item.delivery_status === "approved" ? `<button class="button execute" data-execute-delivery="${item.delivery_id}">Create Gmail draft</button>` : ""}
+        ${item.delivery_status === "executed" ? '<span class="pill approved">Gmail draft created · not sent</span>' : ""}
+      </div>
+    </article>`).join("") : '<p class="empty-state">No revision request drafts yet.</p>';
+  elements.revisionDrafts.querySelectorAll("[data-approve-draft]").forEach(button => button.addEventListener("click", () => approveRevisionDraft(button.dataset.approveDraft)));
+  elements.revisionDrafts.querySelectorAll("[data-execute-delivery]").forEach(button => button.addEventListener("click", () => executeRevisionDelivery(button.dataset.executeDelivery)));
 }
 
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
+      api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
     state.actions = actions.actions;
     state.calendarEvents = calendar.events;
+    state.documents = documents.documents;
+    state.trustedReferences = references.trusted_references;
+    state.comparisons = comparisons.comparisons;
+    state.revisionDrafts = drafts.drafts;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
-    renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents(); updateMetrics();
+    renderEntities(); renderCommitments(); renderActions(); renderCalendarEvents();
+    renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -199,7 +292,68 @@ async function completeCommitment(id) {
   } catch (error) { notify(error.message, true); }
 }
 
+async function uploadDocument(event) {
+  event.preventDefault();
+  const input = document.querySelector("#document-file");
+  if (!input.files[0]) return;
+  const body = new FormData(); body.append("file", input.files[0]);
+  try { await api("/documents/analyze", { method: "POST", body }); notify("Document analyzed and stored."); event.target.reset(); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function importGmailAttachments() {
+  try {
+    const result = await api("/automation/contract-intake", { method: "POST", body: JSON.stringify({ label: "AI-Operator", max_messages: 10 }) });
+    notify(`Automation #${result.run_id}: ${result.review_ready.length} ready for review, ${result.analyzed_only.length} need a reference, ${result.errors.length} errors.`, result.errors.length > 0);
+    await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
+async function markTrusted(id) {
+  const label = window.prompt("Reference label:", "Approved reference")?.trim(); if (!label) return;
+  const note = window.prompt("Why is this document trusted?", "Manually reviewed and approved as baseline.")?.trim(); if (!note) return;
+  try { await api(`/documents/${id}/trusted-reference`, { method: "POST", body: JSON.stringify({ label, note }) }); notify("Trusted reference added by human decision."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function compareTrusted(id) {
+  try { await api(`/documents/${id}/compare-with-trusted-reference`, { method: "POST" }); notify("Comparison completed with the selected trusted reference."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function reviewComparison(id, decision) {
+  const note = window.prompt(`Required reason for ${decision.replaceAll("_", " ")}:`, "")?.trim(); if (!note) return;
+  try { await api(`/documents/comparisons/${id}/decision`, { method: "POST", body: JSON.stringify({ decision, note }) }); notify("Human review decision recorded."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function createRevisionDraft(id) {
+  try { await api(`/documents/comparisons/${id}/revision-draft`, { method: "POST" }); notify("Revision request draft prepared. Nothing was sent."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function approveRevisionDraft(id) {
+  const recipient = window.prompt("Recipient email address:", "")?.trim(); if (!recipient) return;
+  const note = window.prompt("Approval note:", "Recipient and wording manually verified.")?.trim(); if (!note) return;
+  try { await api(`/documents/revision-drafts/${id}/approve-gmail-draft`, { method: "POST", body: JSON.stringify({ recipient, note }) }); notify("Recipient approved. Gmail has not been called yet."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+async function executeRevisionDelivery(id) {
+  if (!window.confirm("Create the approved Gmail draft? The email will not be sent.")) return;
+  try { await api(`/documents/revision-draft-deliveries/${id}/execute`, { method: "POST" }); notify("Gmail draft created. Nothing was sent."); await refresh(); }
+  catch (error) { notify(error.message, true); }
+}
+
+function switchView(view) {
+  document.querySelectorAll(".app-view").forEach(section => { section.hidden = !section.id.startsWith(view); });
+  document.querySelectorAll(".view-tab").forEach(button => button.classList.toggle("active", button.dataset.view === view));
+}
+
 document.querySelector("#refresh-button").addEventListener("click", refresh);
 document.querySelector("#monitor-button").addEventListener("click", runMonitor);
 elements.statusButton.addEventListener("click", generateStatus);
+document.querySelector("#document-upload-form").addEventListener("submit", uploadDocument);
+document.querySelector("#gmail-attachments-button").addEventListener("click", importGmailAttachments);
+document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
 refresh();
