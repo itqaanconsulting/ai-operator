@@ -440,7 +440,12 @@ class Database:
                     item_commitment_id = cursor.lastrowid
                     commitment_id = commitment_id or item_commitment_id
                 if item.proposed_action:
-                    action_type = "calendar_event" if item.kind == "meeting" else "draft_reply" if item.suggested_reply else "review"
+                    action_type = (
+                        "calendar_event" if item.kind == "meeting"
+                        else "draft_reply" if item.suggested_reply
+                        else "record_decision" if item.kind == "decision"
+                        else "review"
+                    )
                     payload = {"suggested_reply": item.suggested_reply,
                                "scenario": analysis.scenario, "work_item_kind": item.kind}
                     if item.kind == "meeting":
@@ -450,6 +455,12 @@ class Database:
                             "end_at": item.end_at,
                             "location": item.location,
                             "attendees": item.attendees,
+                        }
+                    elif item.kind == "decision":
+                        payload["decision_record"] = {
+                            "title": item.title,
+                            "decision": "",
+                            "rationale": analysis.summary,
                         }
                     cursor = connection.execute(
                         """INSERT INTO proposed_actions
@@ -645,7 +656,12 @@ class Database:
             emails = {}
             for email_id in email_ids:
                 row = connection.execute(
-                    "SELECT id, subject, sender, created_at FROM emails WHERE id = ?", (email_id,)
+                    """SELECT em.id, em.subject, em.sender, em.created_at,
+                              GROUP_CONCAT(DISTINCT en.name) AS entity_name
+                       FROM emails em
+                       LEFT JOIN email_entities ee ON ee.email_id = em.id
+                       LEFT JOIN entities en ON en.id = ee.entity_id
+                       WHERE em.id = ? GROUP BY em.id""", (email_id,)
                 ).fetchone()
                 if row:
                     emails[email_id] = dict(row)
@@ -1237,7 +1253,9 @@ class Database:
             if cursor.rowcount == 0:
                 return None
             row = connection.execute(
-                """SELECT a.*, e.gmail_msg_id, e.sender, e.subject
+                """SELECT a.*, e.gmail_msg_id, e.sender, e.subject,
+                          (SELECT ee.entity_id FROM email_entities ee
+                           WHERE ee.email_id = e.id ORDER BY ee.entity_id LIMIT 1) AS entity_id
                    FROM proposed_actions a
                    JOIN emails e ON e.id = a.email_id
                    WHERE a.id = ?""",

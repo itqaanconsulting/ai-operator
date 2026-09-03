@@ -11,7 +11,8 @@ automatically.
 - Recognizes information, tasks, meetings, decisions, and follow-ups.
 - Stores emails, commitments, and proposed actions in SQLite.
 - Supports human approval and rejection.
-- Records decisions in an audit log.
+- Turns AI-detected decision requests into editable, approval-gated business records.
+- Records decisions in entity context and the audit log.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.
@@ -272,7 +273,8 @@ The default dashboard follows one email-first workflow:
 2. Click **Scan Gmail**. One audited automation run extracts tasks, deadlines,
    and proposed actions, then checks existing open loops for follow-up.
 3. Review the findings and approve or reject each proposed action.
-4. For an approved reply action, create a Gmail draft. Nothing is sent.
+4. Execute an approved action: create a Gmail draft, create a Calendar event, or
+   record an internal business decision. Nothing is sent automatically.
 
 Business context, document comparison, scheduling, and audit history remain
 available as secondary tools without interrupting this main flow.
@@ -304,6 +306,12 @@ draft in Gmail and never sends it.
 Meeting actions include an editable Calendar proposal. After approval, **Create
 Calendar event** writes the event with `sendUpdates=none`, so attendee invitation
 emails are not sent automatically.
+
+Decision findings include an editable title, final outcome, and rationale. Saving
+only updates the proposal. After explicit approval, **Record decision** stores it
+under the company or project linked to the source email, making it available to
+future status answers and executive briefings. If a reply is also required, AI
+creates that as a separate follow-up item with its own approval gate.
 
 Ready-to-send fictional examples are available in
 [`docs/test-emails.md`](docs/test-emails.md).

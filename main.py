@@ -47,13 +47,14 @@ from models import (
     InboxAutomationScheduleRequest,
     ActionDraftUpdateRequest,
     CalendarEventProposalUpdateRequest,
+    DecisionProposalUpdateRequest,
 )
 from open_loops import OpenLoopMonitor
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.26.1")
+app = FastAPI(title="AI Commitment Operator", version="0.27.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -219,6 +220,16 @@ def update_calendar_proposal(action_id: int, request: CalendarEventProposalUpdat
     )
     if action is None:
         raise HTTPException(status_code=409, detail="Editable Calendar proposal was not found")
+    return action
+
+
+@app.put("/actions/{action_id}/decision-proposal")
+def update_decision_proposal(action_id: int, request: DecisionProposalUpdateRequest):
+    action = database.update_action_payload(
+        action_id, {"decision_record": request.model_dump()}, {"record_decision"},
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable decision proposal was not found")
     return action
 
 
@@ -700,6 +711,17 @@ def execute_action(action_id: int):
                 payload.get("calendar_event") or {}
             )
             result = CalendarOperator(get_calendar_service()).create_event(proposal.model_dump())
+        elif action["action_type"] == "record_decision":
+            if not action.get("entity_id"):
+                raise ValueError("Decision is not linked to a company or project")
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = DecisionProposalUpdateRequest.model_validate(
+                payload.get("decision_record") or {}
+            )
+            recorded = database.add_decision(action["entity_id"], RecordDecisionRequest(
+                **proposal.model_dump(), status="final", source_email_id=action["email_id"]
+            ))
+            result = {"decision_id": recorded["id"], "recorded": True}
         else:
             raise ValueError("This approved action has no external executor")
         return database.finish_action(action_id, result)

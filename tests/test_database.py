@@ -84,6 +84,25 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(action["action_type"], "calendar_event")
         self.assertIn("2026-09-18T10:00:00+02:00", action["payload_json"])
 
+    def test_decision_work_item_creates_editable_decision_proposal(self):
+        analysis = EmailAnalysis(
+            category="decision", scenario="approval", summary="Budget approval requested.",
+            company_or_project="Project Atlas",
+            work_items=[EmailWorkItem(
+                kind="decision", title="Approve campaign budget",
+                proposed_action="Decide whether to approve the campaign budget.",
+            )],
+        )
+        _, _, action_id = self.db.save_analysis(
+            EmailRequest(subject="Budget approval", body="Can we proceed?"), analysis
+        )
+        action = next(row for row in self.db.list_rows("proposed_actions") if row["id"] == action_id)
+        payload = __import__("json").loads(action["payload_json"])
+        self.assertEqual(action["action_type"], "record_decision")
+        self.assertEqual(payload["decision_record"]["title"], "Approve campaign budget")
+        self.assertEqual(payload["decision_record"]["rationale"], "Budget approval requested.")
+        self.assertEqual(self.db.list_work_queue()[0]["email"]["entity_name"], "Project Atlas")
+
     def test_action_can_only_be_decided_once(self):
         request = EmailRequest(subject="Action required", body="Can you review this?")
         analysis = EmailAnalysis(

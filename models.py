@@ -90,6 +90,12 @@ class CalendarEventProposalUpdateRequest(BaseModel):
     attendees: list[str] = Field(default_factory=list, max_length=50)
 
 
+class DecisionProposalUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    decision: str = Field(min_length=1, max_length=5000)
+    rationale: str | None = Field(default=None, max_length=5000)
+
+
 class GmailImportRequest(BaseModel):
     label: str = Field(default="AI-Operator", min_length=1, max_length=100)
     max_results: int = Field(default=10, ge=1, le=50)
