@@ -35,3 +35,23 @@ docker compose --env-file .env.n8n -f compose.n8n.yml logs --tail 100 n8n
 Stopping the container does not delete the `ai-operator-n8n-data` volume.
 Never use `down --volumes` unless you intentionally want to erase the local n8n
 account, workflows, execution history, and credentials.
+
+## Import the Trello workflow
+
+Import `n8n/ai-operator-to-trello.json` from the n8n workflow menu. The workflow
+is inactive by default and cannot create a card until both credentials are set:
+
+1. Create a Header Auth credential for the Webhook node. Use header name
+   `X-AI-Operator-Secret` and the value stored in `.env.n8n` as
+   `AI_OPERATOR_WEBHOOK_SECRET`.
+2. Connect a Trello credential to the Trello node.
+3. Select a real Trello board and list in the Trello node; never commit their IDs
+   or credentials into the workflow template.
+
+Display the generated webhook secret locally with:
+
+```powershell
+(Get-Content .env.n8n | Select-String '^AI_OPERATOR_WEBHOOK_SECRET=').Line.Split('=', 2)[1]
+```
+
+Do not paste this secret into chat, Git, screenshots, or documentation.

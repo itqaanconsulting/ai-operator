@@ -1,0 +1,65 @@
+{
+  "name": "AI Operator - Approved record to Trello",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-operator-trello",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "1e7fd672-7580-4a3a-a1e6-fac8c42b1c01",
+      "name": "Approved AI Operator record",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "ai-operator-trello"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "card-name", "name": "cardName", "value": "={{ $json.body.title }}", "type": "string"},
+            {"id": "card-description", "name": "cardDescription", "value": "=AI type: {{ $json.body.record_type }}\nPriority: {{ $json.body.priority }}\nOwner: {{ $json.body.owner || 'Unassigned' }}\nDue: {{ $json.body.due_at || 'No due date' }}\n\nNext action:\n{{ $json.body.next_action }}\n\nNotes:\n{{ $json.body.notes || '' }}\n\nSource: AI Commitment Operator record #{{ $json.body.id }}", "type": "string"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "73d93232-2289-42ee-b2aa-60ec13043b12",
+      "name": "Prepare Trello card",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "resource": "card",
+        "operation": "create",
+        "listId": "REPLACE_WITH_TRELLO_LIST_ID",
+        "name": "={{ $json.cardName }}",
+        "description": "={{ $json.cardDescription }}",
+        "additionalFields": {}
+      },
+      "id": "128f28a8-5739-457c-a294-ebea73389558",
+      "name": "Create Trello card",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [480, 0]
+    }
+  ],
+  "connections": {
+    "Approved AI Operator record": {
+      "main": [[{"node": "Prepare Trello card", "type": "main", "index": 0}]]
+    },
+    "Prepare Trello card": {
+      "main": [[{"node": "Create Trello card", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "active": false,
+  "versionId": "5091ef11-8da6-4167-a471-673886ad39b8",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
