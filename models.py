@@ -96,6 +96,12 @@ class DecisionProposalUpdateRequest(BaseModel):
     rationale: str | None = Field(default=None, max_length=5000)
 
 
+class FollowUpProposalUpdateRequest(BaseModel):
+    follow_up_at: str = Field(min_length=10, max_length=50)
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=20_000)
+
+
 class GmailImportRequest(BaseModel):
     label: str = Field(default="AI-Operator", min_length=1, max_length=100)
     max_results: int = Field(default=10, ge=1, le=50)

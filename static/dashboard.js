@@ -76,6 +76,10 @@ function renderCommitments() {
         const payload = action ? parseJson(action.payload_json) : {};
         const event = payload.calendar_event || {};
         const decision = payload.decision_record || {};
+        const followUp = payload.follow_up || {};
+        const proposalReady = action?.action_type === "record_decision" ? Boolean(decision.title && decision.decision)
+          : action?.action_type === "schedule_follow_up" ? Boolean(followUp.follow_up_at && followUp.subject && followUp.body)
+          : true;
         return `<article class="work-item">
           <h3>${escapeHtml(item.title)}</h3>
           <div class="meta"><span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span><span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">${escapeHtml(deadlineState(item.deadline))}</span>${payload.work_item_kind ? `<span class="pill">${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}</div>
@@ -83,12 +87,16 @@ function renderCommitments() {
           ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor"><summary>Preview or edit reply</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea><button class="button secondary" data-save-draft="${action.id}">Save changes</button></div></details>` : ""}
           ${action?.action_type === "calendar_event" ? `<details class="draft-editor"><summary>Preview or edit Calendar proposal</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><input data-event-start="${action.id}" value="${escapeHtml(event.start_at || "")}" placeholder="Start ISO date/time"><input data-event-end="${action.id}" value="${escapeHtml(event.end_at || "")}" placeholder="End ISO date/time"><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save proposal</button></div></details>` : ""}
           ${action?.action_type === "record_decision" ? `<details class="draft-editor" open><summary>Decision record · ${escapeHtml(group.email.entity_name || "no company or project linked")}</summary><div class="draft-editor-body"><input data-decision-title="${action.id}" value="${escapeHtml(decision.title || item.title)}" aria-label="Decision title"><textarea data-decision-outcome="${action.id}" aria-label="Decision outcome" placeholder="Enter the final decision before approval">${escapeHtml(decision.decision || "")}</textarea><textarea data-decision-rationale="${action.id}" aria-label="Decision rationale" placeholder="Rationale (optional)">${escapeHtml(decision.rationale || "")}</textarea><button class="button secondary" data-save-decision="${action.id}">Save decision proposal</button></div></details>` : ""}
+          ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor" open><summary>Scheduled follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up</button></div></details>` : ""}
           <div class="card-actions">
-            ${action?.status === "pending_approval" ? `<button class="button approve" data-approve="${action.id}">Approve</button><button class="button reject" data-reject="${action.id}">Reject</button>` : ""}
+            ${action?.status === "pending_approval" && proposalReady ? `<button class="button approve" data-approve="${action.id}">Approve</button>` : ""}
+            ${action?.status === "pending_approval" && !proposalReady ? '<span class="pill">Complete proposal first</span>' : ""}
+            ${action?.status === "pending_approval" ? `<button class="button reject" data-reject="${action.id}">Reject</button>` : ""}
             ${action?.status === "approved" && action.action_type === "draft_reply" ? `<button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
             ${action?.status === "approved" && action.action_type === "calendar_event" ? `<button class="button execute" data-execute="${action.id}">Create Calendar event</button>` : ""}
             ${action?.status === "approved" && action.action_type === "record_decision" ? `<button class="button execute" data-execute="${action.id}">Record decision</button>` : ""}
-            ${action?.status === "approved" && !["draft_reply", "calendar_event", "record_decision"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
+            ${action?.status === "approved" && action.action_type === "schedule_follow_up" ? `<button class="button execute" data-execute="${action.id}">Activate follow-up</button>` : ""}
+            ${action?.status === "approved" && !["draft_reply", "calendar_event", "record_decision", "schedule_follow_up"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
             <button class="button secondary" data-complete="${item.id}">Mark complete</button>
           </div>
         </article>`;
@@ -103,6 +111,7 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
+  elements.commitments.querySelectorAll("[data-save-follow-up]").forEach(button => button.addEventListener("click", () => saveFollowUpProposal(button.dataset.saveFollowUp)));
 }
 
 function renderCalendarEvents() {
@@ -417,6 +426,16 @@ async function saveDecisionProposal(id) {
   try {
     await api(`/actions/${id}/decision-proposal`, { method: "PUT", body: JSON.stringify(proposal) });
     notify("Decision proposal saved. Approve it before recording."); await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
+async function saveFollowUpProposal(id) {
+  const value = name => elements.commitments.querySelector(`[data-follow-up-${name}="${id}"]`).value.trim();
+  const proposal = { follow_up_at: value("at"), subject: value("subject"), body: value("body") };
+  if (!proposal.follow_up_at || !proposal.subject || !proposal.body) { notify("Follow-up time, subject and body are required.", true); return; }
+  try {
+    await api(`/actions/${id}/follow-up-proposal`, { method: "PUT", body: JSON.stringify(proposal) });
+    notify("Follow-up saved. Approve it before activation."); await refresh();
   } catch (error) { notify(error.message, true); }
 }
 

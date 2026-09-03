@@ -120,6 +120,20 @@ class Database:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (commitment_id, alert_type, deadline_snapshot)
                 );
+                CREATE TABLE IF NOT EXISTS scheduled_follow_ups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_action_id INTEGER NOT NULL UNIQUE REFERENCES proposed_actions(id),
+                    commitment_id INTEGER NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
+                    email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+                    follow_up_at TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'scheduled',
+                    generated_action_id INTEGER REFERENCES proposed_actions(id),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    triggered_at TEXT,
+                    cancelled_at TEXT
+                );
                 CREATE TABLE IF NOT EXISTS calendar_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     google_event_id TEXT NOT NULL,
@@ -288,6 +302,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_actions_status ON proposed_actions(status);
                 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_id, decided_at);
                 CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
+                CREATE INDEX IF NOT EXISTS idx_scheduled_follow_ups_status_due
+                    ON scheduled_follow_ups(status, follow_up_at);
                 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
                 CREATE INDEX IF NOT EXISTS idx_document_entities_entity ON document_entities(entity_id);
                 CREATE INDEX IF NOT EXISTS idx_comparison_entities_entity
@@ -442,6 +458,7 @@ class Database:
                 if item.proposed_action:
                     action_type = (
                         "calendar_event" if item.kind == "meeting"
+                        else "schedule_follow_up" if item.kind == "follow_up"
                         else "draft_reply" if item.suggested_reply
                         else "record_decision" if item.kind == "decision"
                         else "review"
@@ -461,6 +478,15 @@ class Database:
                             "title": item.title,
                             "decision": "",
                             "rationale": analysis.summary,
+                        }
+                    elif item.kind == "follow_up":
+                        subject = request.subject
+                        if not subject.casefold().startswith("re:"):
+                            subject = f"Re: {subject}"
+                        payload["follow_up"] = {
+                            "follow_up_at": item.deadline,
+                            "subject": subject,
+                            "body": item.suggested_reply or f"Following up on: {item.title}",
                         }
                     cursor = connection.execute(
                         """INSERT INTO proposed_actions
@@ -679,12 +705,75 @@ class Database:
 
     def has_active_primary_action(self, commitment_id: int):
         with self.connect() as connection:
-            return connection.execute(
+            action = connection.execute(
                 """SELECT 1 FROM proposed_actions WHERE commitment_id = ?
                      AND action_type != 'open_loop_review'
                      AND status IN ('pending_approval', 'approved') LIMIT 1""",
                 (commitment_id,),
-            ).fetchone() is not None
+            ).fetchone()
+            scheduled = connection.execute(
+                "SELECT 1 FROM scheduled_follow_ups WHERE commitment_id = ? AND status = 'scheduled'",
+                (commitment_id,),
+            ).fetchone()
+            return action is not None or scheduled is not None
+
+    def schedule_follow_up(self, action: dict, proposal: dict):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO scheduled_follow_ups
+                   (source_action_id, commitment_id, email_id, follow_up_at, subject, body)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (action["id"], action["commitment_id"], action["email_id"],
+                 proposal["follow_up_at"], proposal["subject"], proposal["body"]),
+            )
+            row = connection.execute(
+                "SELECT * FROM scheduled_follow_ups WHERE source_action_id = ?", (action["id"],)
+            ).fetchone()
+            if cursor.rowcount:
+                connection.execute(
+                    """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                       VALUES ('follow_up', ?, 'scheduled', ?)""",
+                    (row["id"], json.dumps({"follow_up_at": proposal["follow_up_at"]})),
+                )
+            return dict(row)
+
+    def trigger_due_follow_ups(self, now_iso: str):
+        created = []
+        with self.connect() as connection:
+            due = connection.execute(
+                """SELECT sf.* FROM scheduled_follow_ups sf
+                   JOIN commitments c ON c.id = sf.commitment_id
+                   WHERE sf.status = 'scheduled' AND sf.follow_up_at <= ? AND c.status = 'open'
+                   ORDER BY sf.follow_up_at, sf.id""", (now_iso,)
+            ).fetchall()
+            for follow_up in due:
+                payload = {
+                    "suggested_reply": follow_up["body"],
+                    "draft_subject": follow_up["subject"],
+                    "scenario": "follow_up", "work_item_kind": "follow_up",
+                    "scheduled_follow_up_id": follow_up["id"],
+                }
+                cursor = connection.execute(
+                    """INSERT INTO proposed_actions
+                       (commitment_id, email_id, action_type, description, payload_json, status)
+                       VALUES (?, ?, 'draft_reply', ?, ?, ?)""",
+                    (follow_up["commitment_id"], follow_up["email_id"],
+                     "Review the scheduled follow-up draft.", json.dumps(payload),
+                     ActionStatus.PENDING_APPROVAL.value),
+                )
+                action_id = cursor.lastrowid
+                connection.execute(
+                    """UPDATE scheduled_follow_ups
+                       SET status = 'triggered', generated_action_id = ?, triggered_at = CURRENT_TIMESTAMP
+                       WHERE id = ? AND status = 'scheduled'""", (action_id, follow_up["id"])
+                )
+                connection.execute(
+                    """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                       VALUES ('follow_up', ?, 'triggered', ?)""",
+                    (follow_up["id"], json.dumps({"action_id": action_id})),
+                )
+                created.append({"follow_up_id": follow_up["id"], "action_id": action_id})
+        return {"checked_at": now_iso, "created": created}
 
     def get_contract_schedule(self):
         with self.connect() as connection:
@@ -1555,6 +1644,10 @@ class Database:
                 (ActionStatus.REJECTED.value,
                  f"Closed automatically when commitment completed. {note or ''}".strip(),
                  commitment_id, ActionStatus.PENDING_APPROVAL.value),
+            )
+            connection.execute(
+                """UPDATE scheduled_follow_ups SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP
+                   WHERE commitment_id = ? AND status = 'scheduled'""", (commitment_id,)
             )
             connection.execute(
                 """INSERT INTO audit_log (entity_type, entity_id, event, details_json)

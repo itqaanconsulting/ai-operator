@@ -13,6 +13,7 @@ automatically.
 - Supports human approval and rejection.
 - Turns AI-detected decision requests into editable, approval-gated business records.
 - Records decisions in entity context and the audit log.
+- Schedules AI-detected follow-ups and creates an approval-gated draft when due.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.
@@ -312,6 +313,12 @@ only updates the proposal. After explicit approval, **Record decision** stores i
 under the company or project linked to the source email, making it available to
 future status answers and executive briefings. If a reply is also required, AI
 creates that as a separate follow-up item with its own approval gate.
+
+Follow-up findings include an editable due time, subject, and draft body. After
+approval, **Activate follow-up** stores the schedule internally. Each manual or
+scheduled inbox scan checks due follow-ups and places a new Gmail draft proposal
+in the work queue. The draft still requires separate approval and is never sent
+automatically. Completing the underlying work item cancels its pending follow-up.
 
 Ready-to-send fictional examples are available in
 [`docs/test-emails.md`](docs/test-emails.md).

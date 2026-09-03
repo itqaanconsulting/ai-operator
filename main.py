@@ -48,13 +48,15 @@ from models import (
     ActionDraftUpdateRequest,
     CalendarEventProposalUpdateRequest,
     DecisionProposalUpdateRequest,
+    FollowUpProposalUpdateRequest,
 )
 from open_loops import OpenLoopMonitor
+from follow_ups import FollowUpMonitor, normalize_follow_up_time
 
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.27.0")
+app = FastAPI(title="AI Commitment Operator", version="0.28.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -230,6 +232,21 @@ def update_decision_proposal(action_id: int, request: DecisionProposalUpdateRequ
     )
     if action is None:
         raise HTTPException(status_code=409, detail="Editable decision proposal was not found")
+    return action
+
+
+@app.put("/actions/{action_id}/follow-up-proposal")
+def update_follow_up_proposal(action_id: int, request: FollowUpProposalUpdateRequest):
+    try:
+        proposal = request.model_dump()
+        proposal["follow_up_at"] = normalize_follow_up_time(request.follow_up_at)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Follow-up time must be valid ISO-8601") from exc
+    action = database.update_action_payload(
+        action_id, {"follow_up": proposal}, {"schedule_follow_up"},
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable follow-up proposal was not found")
     return action
 
 
@@ -722,6 +739,14 @@ def execute_action(action_id: int):
                 **proposal.model_dump(), status="final", source_email_id=action["email_id"]
             ))
             result = {"decision_id": recorded["id"], "recorded": True}
+        elif action["action_type"] == "schedule_follow_up":
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = FollowUpProposalUpdateRequest.model_validate(payload.get("follow_up") or {})
+            normalized = proposal.model_dump()
+            normalized["follow_up_at"] = normalize_follow_up_time(proposal.follow_up_at)
+            scheduled = database.schedule_follow_up(action, normalized)
+            result = {"follow_up_id": scheduled["id"], "scheduled": True,
+                      "follow_up_at": scheduled["follow_up_at"]}
         else:
             raise ValueError("This approved action has no external executor")
         return database.finish_action(action_id, result)
@@ -789,6 +814,11 @@ def get_entity_status(entity_name: str):
 @app.post("/monitor/open-loops")
 def monitor_open_loops(request: OpenLoopMonitorRequest):
     return OpenLoopMonitor(database).run(request.due_within_days)
+
+
+@app.post("/monitor/follow-ups")
+def monitor_follow_ups():
+    return FollowUpMonitor(database).run()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from open_loops import OpenLoopMonitor
+from follow_ups import FollowUpMonitor
 
 
 class InboxAutomation:
@@ -27,6 +28,7 @@ class InboxAutomation:
                 })
             except Exception as exc:
                 result["errors"].append({"gmail_msg_id": email.gmail_msg_id, "error": str(exc)})
+        result["follow_up_monitor"] = FollowUpMonitor(self.database).run()
         result["open_loop_monitor"] = OpenLoopMonitor(self.database).run(due_within_days)
         if self.document_automation is not None:
             result["document_automation"] = self.document_automation.run(list(attachments or []))
