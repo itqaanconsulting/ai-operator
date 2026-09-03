@@ -352,6 +352,19 @@ Before the first import:
 The shared token covers both Gmail and Calendar. Adding the Calendar scope requires
 one new authorization even when Gmail was already connected.
 
+## Local n8n integration layer
+
+n8n is used for visual orchestration and external connectors such as Trello,
+while the Python service remains responsible for AI analysis, business context,
+approval gates, and audit history. Start the pinned local Docker setup with:
+
+```powershell
+.\scripts\start-n8n.ps1
+```
+
+Then open `http://127.0.0.1:5678`. See
+[`docs/n8n-local.md`](docs/n8n-local.md) for lifecycle and security notes.
+
 If an older token only has `calendar.readonly`, delete `token.pickle`, run
 `python calendar_auth.py`, and complete Google authorization again.
 
