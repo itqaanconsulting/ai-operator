@@ -16,6 +16,8 @@ automatically.
 - Schedules AI-detected follow-ups and creates an approval-gated draft when due.
 - Converts operational findings into editable tasks, CRM leads, finance reviews,
   support cases, document-review tasks, and escalation records.
+- Sends an approved business record to Trello through a published n8n workflow
+  only after a separate human confirmation, with duplicate-card protection.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.

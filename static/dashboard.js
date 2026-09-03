@@ -138,7 +138,25 @@ function renderOperationalRecords() {
       <h3>${escapeHtml(record.title)}</h3>
       <div class="meta"><span class="pill">${escapeHtml(record.record_type.replaceAll("_", " "))}</span><span class="pill ${escapeHtml(record.priority)}">${escapeHtml(record.priority)}</span><span>${escapeHtml(record.entity_name || "Unassigned")}</span></div>
       <p>${escapeHtml(record.next_action)}</p>
+      <div class="card-actions">
+        ${record.trello_status === "completed"
+          ? `${record.trello_card_url ? `<a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open Trello card</a>` : '<span class="pill approved">Sent to Trello</span>'}`
+          : `<button class="button execute" data-send-trello="${record.id}">${record.trello_status === "failed" ? "Retry Trello" : "Send to Trello"}</button>`}
+        ${record.trello_status === "failed" ? `<span class="supporting-copy">${escapeHtml(record.trello_error || "Trello failed")}</span>` : ""}
+      </div>
     </article>`).join("") : '<p class="empty-state">No business records created yet.</p>';
+  elements.operationalRecords.querySelectorAll("[data-send-trello]").forEach(button => {
+    button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendTrello));
+  });
+}
+
+async function sendRecordToTrello(id) {
+  if (!window.confirm("Create one Trello card from this approved business record?")) return;
+  try {
+    const result = await api(`/operational-records/${id}/send-to-trello`, { method: "POST" });
+    notify(result.duplicate ? "This record already has a Trello card." : "Trello card created through n8n.");
+    await refresh();
+  } catch (error) { notify(error.message, true); }
 }
 
 function updateMetrics() {

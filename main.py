@@ -17,6 +17,7 @@ from document_processor import extract_document
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_subject, action_reply_text
 from inbox_automation import InboxAutomation
+from n8n_operator import N8nDispatchError, dispatch_operational_record
 from models import (
     ActionStatus,
     AnalysisResult,
@@ -57,7 +58,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.29.0")
+app = FastAPI(title="AI Commitment Operator", version="0.30.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -782,6 +783,42 @@ def list_entities():
 @app.get("/operational-records")
 def list_operational_records(status: str | None = Query(default=None)):
     return {"records": database.list_operational_records(status)}
+
+
+def _n8n_trello_config():
+    webhook_url = os.getenv(
+        "N8N_TRELLO_WEBHOOK_URL", "http://127.0.0.1:5678/webhook/ai-operator-trello"
+    )
+    webhook_secret = os.getenv("N8N_TRELLO_WEBHOOK_SECRET")
+    if not webhook_secret:
+        local_environment = Path(__file__).parent / ".env.n8n"
+        if local_environment.exists():
+            for line in local_environment.read_text(encoding="utf-8-sig").splitlines():
+                if line.startswith("AI_OPERATOR_WEBHOOK_SECRET="):
+                    webhook_secret = line.split("=", 1)[1].strip()
+                    break
+    return webhook_url, webhook_secret or ""
+
+
+@app.post("/operational-records/{record_id}/send-to-trello")
+def send_operational_record_to_trello(record_id: int):
+    """Send one human-approved business record to Trello through n8n."""
+    record = database.get_operational_record(record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Operational record was not found")
+    dispatch, claimed = database.claim_integration_dispatch(record_id, "trello")
+    if not claimed:
+        if dispatch["status"] == "completed":
+            return {"dispatch": dispatch, "duplicate": True}
+        raise HTTPException(status_code=409, detail="This Trello dispatch is already in progress")
+    try:
+        webhook_url, webhook_secret = _n8n_trello_config()
+        result = dispatch_operational_record(webhook_url, webhook_secret, record)
+        completed = database.finish_integration_dispatch(dispatch["id"], result)
+        return {"dispatch": completed, "duplicate": False}
+    except N8nDispatchError as exc:
+        database.fail_integration_dispatch(dispatch["id"], str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def _entity_or_404(entity_name: str):

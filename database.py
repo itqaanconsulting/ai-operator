@@ -152,6 +152,20 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'open',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS integration_dispatches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operational_record_id INTEGER NOT NULL
+                        REFERENCES operational_records(id) ON DELETE CASCADE,
+                    integration TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'sending',
+                    external_id TEXT,
+                    external_url TEXT,
+                    response_json TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TEXT,
+                    UNIQUE (operational_record_id, integration)
+                );
                 CREATE TABLE IF NOT EXISTS calendar_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     google_event_id TEXT NOT NULL,
@@ -324,6 +338,8 @@ class Database:
                     ON scheduled_follow_ups(status, follow_up_at);
                 CREATE INDEX IF NOT EXISTS idx_operational_records_entity_status
                     ON operational_records(entity_id, status);
+                CREATE INDEX IF NOT EXISTS idx_integration_dispatches_status
+                    ON integration_dispatches(integration, status);
                 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
                 CREATE INDEX IF NOT EXISTS idx_document_entities_entity ON document_entities(entity_id);
                 CREATE INDEX IF NOT EXISTS idx_comparison_entities_entity
@@ -835,10 +851,14 @@ class Database:
             return dict(row)
 
     def list_operational_records(self, status: str | None = None):
-        query = """SELECT r.*, e.name AS entity_name, em.subject AS source_subject
+        query = """SELECT r.*, e.name AS entity_name, em.subject AS source_subject,
+                          d.status AS trello_status, d.external_id AS trello_card_id,
+                          d.external_url AS trello_card_url, d.error_message AS trello_error
                    FROM operational_records r
                    LEFT JOIN entities e ON e.id = r.entity_id
-                   JOIN emails em ON em.id = r.email_id"""
+                   JOIN emails em ON em.id = r.email_id
+                   LEFT JOIN integration_dispatches d
+                     ON d.operational_record_id = r.id AND d.integration = 'trello'"""
         params = ()
         if status:
             query += " WHERE r.status = ?"
@@ -846,6 +866,76 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(query + " ORDER BY r.id DESC", params).fetchall()
             return [dict(row) for row in rows]
+
+    def get_operational_record(self, record_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT r.*, e.name AS entity_name
+                   FROM operational_records r
+                   LEFT JOIN entities e ON e.id = r.entity_id
+                   WHERE r.id = ?""", (record_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def claim_integration_dispatch(self, record_id: int, integration: str):
+        with self.connect() as connection:
+            existing = connection.execute(
+                """SELECT * FROM integration_dispatches
+                   WHERE operational_record_id = ? AND integration = ?""",
+                (record_id, integration),
+            ).fetchone()
+            if existing and existing["status"] == "completed":
+                return dict(existing), False
+            if existing and existing["status"] == "sending":
+                return dict(existing), False
+            if existing:
+                connection.execute(
+                    """UPDATE integration_dispatches
+                       SET status = 'sending', error_message = NULL
+                       WHERE id = ?""", (existing["id"],),
+                )
+                row = connection.execute(
+                    "SELECT * FROM integration_dispatches WHERE id = ?", (existing["id"],)
+                ).fetchone()
+                return dict(row), True
+            cursor = connection.execute(
+                """INSERT INTO integration_dispatches
+                   (operational_record_id, integration) VALUES (?, ?)""",
+                (record_id, integration),
+            )
+            row = connection.execute(
+                "SELECT * FROM integration_dispatches WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row), True
+
+    def finish_integration_dispatch(self, dispatch_id: int, result: dict):
+        external_url = result.get("url") or result.get("shortUrl")
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE integration_dispatches
+                   SET status = 'completed', external_id = ?, external_url = ?,
+                       response_json = ?, completed_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND status = 'sending'""",
+                (result.get("id"), external_url, json.dumps(result), dispatch_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM integration_dispatches WHERE id = ?", (dispatch_id,)
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('operational_record', ?, 'sent_to_trello', ?)""",
+                (row["operational_record_id"], json.dumps({
+                    "external_id": row["external_id"], "external_url": row["external_url"],
+                })),
+            )
+            return dict(row)
+
+    def fail_integration_dispatch(self, dispatch_id: int, error: str):
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE integration_dispatches SET status = 'failed', error_message = ?
+                   WHERE id = ? AND status = 'sending'""", (error[:1000], dispatch_id)
+            )
 
     def get_contract_schedule(self):
         with self.connect() as connection:

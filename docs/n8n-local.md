@@ -47,6 +47,20 @@ is inactive by default and cannot create a card until both credentials are set:
 2. Connect a Trello credential to the Trello node.
 3. Select a real Trello board and list in the Trello node; never commit their IDs
    or credentials into the workflow template.
+4. Publish the workflow so `POST /webhook/ai-operator-trello` remains available.
+
+The FastAPI application reads the same secret from `.env.n8n` for local development.
+For another n8n host, configure these values in the application's `.env` file:
+
+```dotenv
+N8N_TRELLO_WEBHOOK_URL=https://your-n8n-host/webhook/ai-operator-trello
+N8N_TRELLO_WEBHOOK_SECRET=use-the-same-header-auth-secret
+```
+
+An approved business record can then be sent with
+`POST /operational-records/{record_id}/send-to-trello`. The dispatch is persisted;
+repeating a successful request returns the existing result instead of creating a
+second card.
 
 Display the generated webhook secret locally with:
 
