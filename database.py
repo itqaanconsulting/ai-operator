@@ -134,6 +134,24 @@ class Database:
                     triggered_at TEXT,
                     cancelled_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS operational_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_action_id INTEGER NOT NULL UNIQUE REFERENCES proposed_actions(id),
+                    email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+                    commitment_id INTEGER REFERENCES commitments(id) ON DELETE SET NULL,
+                    entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
+                    record_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    owner TEXT,
+                    due_at TEXT,
+                    priority TEXT NOT NULL DEFAULT 'medium',
+                    next_action TEXT NOT NULL,
+                    notes TEXT,
+                    amount REAL,
+                    currency TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE TABLE IF NOT EXISTS calendar_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     google_event_id TEXT NOT NULL,
@@ -304,6 +322,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_open_loop_alerts_commitment ON open_loop_alerts(commitment_id);
                 CREATE INDEX IF NOT EXISTS idx_scheduled_follow_ups_status_due
                     ON scheduled_follow_ups(status, follow_up_at);
+                CREATE INDEX IF NOT EXISTS idx_operational_records_entity_status
+                    ON operational_records(entity_id, status);
                 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_at);
                 CREATE INDEX IF NOT EXISTS idx_document_entities_entity ON document_entities(entity_id);
                 CREATE INDEX IF NOT EXISTS idx_comparison_entities_entity
@@ -456,9 +476,16 @@ class Database:
                     item_commitment_id = cursor.lastrowid
                     commitment_id = commitment_id or item_commitment_id
                 if item.proposed_action:
+                    record_types = {
+                        "task": "task", "sales_lead": "crm_lead",
+                        "payment": "finance_review", "customer_issue": "support_case",
+                        "contract_review": "document_review", "risk": "escalation",
+                    }
                     action_type = (
                         "calendar_event" if item.kind == "meeting"
                         else "schedule_follow_up" if item.kind == "follow_up"
+                        else "create_operational_record" if item.kind in record_types
+                             and not (item.kind == "task" and item.suggested_reply)
                         else "draft_reply" if item.suggested_reply
                         else "record_decision" if item.kind == "decision"
                         else "review"
@@ -487,6 +514,14 @@ class Database:
                             "follow_up_at": item.deadline,
                             "subject": subject,
                             "body": item.suggested_reply or f"Following up on: {item.title}",
+                        }
+                    elif item.kind in record_types:
+                        payload["operational_record"] = {
+                            "record_type": record_types[item.kind], "title": item.title,
+                            "owner": item.owner, "due_at": item.deadline,
+                            "priority": item.urgency, "next_action": item.proposed_action,
+                            "notes": item.notes or analysis.summary,
+                            "amount": item.amount, "currency": item.currency,
                         }
                     cursor = connection.execute(
                         """INSERT INTO proposed_actions
@@ -774,6 +809,43 @@ class Database:
                 )
                 created.append({"follow_up_id": follow_up["id"], "action_id": action_id})
         return {"checked_at": now_iso, "created": created}
+
+    def create_operational_record(self, action: dict, proposal: dict):
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO operational_records
+                   (source_action_id, email_id, commitment_id, entity_id, record_type,
+                    title, owner, due_at, priority, next_action, notes, amount, currency)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (action["id"], action["email_id"], action.get("commitment_id"),
+                 action.get("entity_id"), proposal["record_type"], proposal["title"],
+                 proposal.get("owner"), proposal.get("due_at"), proposal["priority"],
+                 proposal["next_action"], proposal.get("notes"), proposal.get("amount"),
+                 proposal.get("currency")),
+            )
+            row = connection.execute(
+                "SELECT * FROM operational_records WHERE source_action_id = ?", (action["id"],)
+            ).fetchone()
+            if cursor.rowcount:
+                connection.execute(
+                    """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                       VALUES ('operational_record', ?, 'created', ?)""",
+                    (row["id"], json.dumps({"record_type": row["record_type"]})),
+                )
+            return dict(row)
+
+    def list_operational_records(self, status: str | None = None):
+        query = """SELECT r.*, e.name AS entity_name, em.subject AS source_subject
+                   FROM operational_records r
+                   LEFT JOIN entities e ON e.id = r.entity_id
+                   JOIN emails em ON em.id = r.email_id"""
+        params = ()
+        if status:
+            query += " WHERE r.status = ?"
+            params = (status,)
+        with self.connect() as connection:
+            rows = connection.execute(query + " ORDER BY r.id DESC", params).fetchall()
+            return [dict(row) for row in rows]
 
     def get_contract_schedule(self):
         with self.connect() as connection:
@@ -1791,6 +1863,10 @@ class Database:
             decisions = connection.execute(
                 "SELECT * FROM decisions WHERE entity_id = ? ORDER BY decided_at DESC", (entity_id,)
             ).fetchall()
+            operational_records = connection.execute(
+                "SELECT * FROM operational_records WHERE entity_id = ? ORDER BY created_at DESC",
+                (entity_id,),
+            ).fetchall()
             calendar_events = connection.execute(
                 """SELECT ce.id, ce.title, ce.location, ce.start_at, ce.end_at, ce.all_day,
                           ce.status, ce.attendees_json, ce.meeting_link, ce.html_link
@@ -1820,6 +1896,7 @@ class Database:
                 "commitments": [dict(row) for row in commitments],
                 "actions": [dict(row) for row in actions],
                 "decisions": [dict(row) for row in decisions],
+                "operational_records": [dict(row) for row in operational_records],
                 "calendar_events": [dict(row) for row in calendar_events],
                 "documents": [dict(row) for row in documents],
                 "document_comparisons": [dict(row) for row in document_comparisons],
@@ -1838,6 +1915,9 @@ class Database:
             events.append({"type": "action", "timestamp": action["created_at"], "data": action})
         for decision in context["decisions"]:
             events.append({"type": "decision", "timestamp": decision["decided_at"], "data": decision})
+        for record in context["operational_records"]:
+            events.append({"type": record["record_type"], "timestamp": record["created_at"],
+                           "data": record})
         for calendar_event in context["calendar_events"]:
             events.append({"type": "calendar_event", "timestamp": calendar_event["start_at"],
                            "data": calendar_event})

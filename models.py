@@ -45,6 +45,10 @@ class EmailWorkItem(BaseModel):
     end_at: str | None = None
     location: str | None = None
     attendees: list[str] = Field(default_factory=list, max_length=50)
+    owner: str | None = Field(default=None, max_length=300)
+    amount: float | None = None
+    currency: str | None = Field(default=None, max_length=10)
+    notes: str | None = Field(default=None, max_length=5000)
 
 
 class EmailAnalysis(BaseModel):
@@ -100,6 +104,18 @@ class FollowUpProposalUpdateRequest(BaseModel):
     follow_up_at: str = Field(min_length=10, max_length=50)
     subject: str = Field(min_length=1, max_length=500)
     body: str = Field(min_length=1, max_length=20_000)
+
+
+class OperationalRecordProposal(BaseModel):
+    record_type: Literal["task", "crm_lead", "finance_review", "support_case", "document_review", "escalation"]
+    title: str = Field(min_length=1, max_length=500)
+    owner: str | None = Field(default=None, max_length=300)
+    due_at: str | None = Field(default=None, max_length=50)
+    priority: Literal["low", "medium", "high"] = "medium"
+    next_action: str = Field(min_length=1, max_length=5000)
+    notes: str | None = Field(default=None, max_length=5000)
+    amount: float | None = None
+    currency: str | None = Field(default=None, max_length=10)
 
 
 class GmailImportRequest(BaseModel):

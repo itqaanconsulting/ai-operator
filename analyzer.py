@@ -21,12 +21,15 @@ customer_service, finance, contract, meeting, approval, operations, or escalatio
 Return JSON with category (information, task, meeting, decision, follow_up, other),
 scenario, summary, contact_name, company_or_project, confidence (0 to 1), and
 work_items. Each work item has kind, title, deadline (ISO-8601 or null), urgency,
-proposed_action, suggested_reply, and requires_approval. Return an empty work_items
+proposed_action, suggested_reply, requires_approval, owner, amount, currency, and
+notes. Return an empty work_items
 array when the email is informational. Meeting items also include start_at and
 end_at as ISO-8601 values, location, and attendees. Use null or an empty array
 when meeting details are unknown. For a decision item, leave suggested_reply null
 so the human can enter the final decision outcome. If communicating that decision
 also requires a reply, create a separate follow_up item with the suggested reply.
+Likewise, keep operational work (task, payment, contract_review, sales_lead,
+customer_issue, or risk) separate from a follow_up reply item.
 Do not combine unrelated work into one item.
 """
 

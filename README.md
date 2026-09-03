@@ -14,6 +14,8 @@ automatically.
 - Turns AI-detected decision requests into editable, approval-gated business records.
 - Records decisions in entity context and the audit log.
 - Schedules AI-detected follow-ups and creates an approval-gated draft when due.
+- Converts operational findings into editable tasks, CRM leads, finance reviews,
+  support cases, document-review tasks, and escalation records.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.
@@ -319,6 +321,13 @@ approval, **Activate follow-up** stores the schedule internally. Each manual or
 scheduled inbox scan checks due follow-ups and places a new Gmail draft proposal
 in the work queue. The draft still requires separate approval and is never sent
 automatically. Completing the underlying work item cancels its pending follow-up.
+
+Other AI findings use the same compact approval flow. The operator maps tasks,
+sales leads, payments, customer issues, contract reviews, and risks to structured
+internal business records. Title, owner, due date, priority, next action, notes,
+and optional amount/currency remain editable before approval. These local records
+are deliberately connector-neutral: a later adapter can synchronize them with
+Trello, Asana, a CRM, support desk, or finance system without changing AI triage.
 
 Ready-to-send fictional examples are available in
 [`docs/test-emails.md`](docs/test-emails.md).

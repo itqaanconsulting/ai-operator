@@ -49,6 +49,7 @@ from models import (
     CalendarEventProposalUpdateRequest,
     DecisionProposalUpdateRequest,
     FollowUpProposalUpdateRequest,
+    OperationalRecordProposal,
 )
 from open_loops import OpenLoopMonitor
 from follow_ups import FollowUpMonitor, normalize_follow_up_time
@@ -56,7 +57,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.28.0")
+app = FastAPI(title="AI Commitment Operator", version="0.29.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -247,6 +248,16 @@ def update_follow_up_proposal(action_id: int, request: FollowUpProposalUpdateReq
     )
     if action is None:
         raise HTTPException(status_code=409, detail="Editable follow-up proposal was not found")
+    return action
+
+
+@app.put("/actions/{action_id}/operational-record")
+def update_operational_record_proposal(action_id: int, request: OperationalRecordProposal):
+    action = database.update_action_payload(
+        action_id, {"operational_record": request.model_dump()}, {"create_operational_record"},
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable operational proposal was not found")
     return action
 
 
@@ -747,6 +758,14 @@ def execute_action(action_id: int):
             scheduled = database.schedule_follow_up(action, normalized)
             result = {"follow_up_id": scheduled["id"], "scheduled": True,
                       "follow_up_at": scheduled["follow_up_at"]}
+        elif action["action_type"] == "create_operational_record":
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = OperationalRecordProposal.model_validate(
+                payload.get("operational_record") or {}
+            )
+            record = database.create_operational_record(action, proposal.model_dump())
+            result = {"record_id": record["id"], "record_type": record["record_type"],
+                      "created": True}
         else:
             raise ValueError("This approved action has no external executor")
         return database.finish_action(action_id, result)
@@ -758,6 +777,11 @@ def execute_action(action_id: int):
 @app.get("/entities")
 def list_entities():
     return {"entities": database.list_entities()}
+
+
+@app.get("/operational-records")
+def list_operational_records(status: str | None = Query(default=None)):
+    return {"records": database.list_operational_records(status)}
 
 
 def _entity_or_404(entity_name: str):

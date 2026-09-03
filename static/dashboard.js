@@ -2,6 +2,7 @@ const state = {
   entities: [], commitments: [], actions: [], calendarEvents: [], selectedEntity: null,
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
   contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [], workQueue: [],
+  operationalRecords: [],
 };
 
 const elements = {
@@ -21,6 +22,7 @@ const elements = {
   briefingContent: document.querySelector("#briefing-content"),
   briefingButton: document.querySelector("#briefing-button"),
   operatorAnswer: document.querySelector("#operator-answer"),
+  operationalRecords: document.querySelector("#operational-records"),
 };
 
 async function api(path, options = {}) {
@@ -77,6 +79,7 @@ function renderCommitments() {
         const event = payload.calendar_event || {};
         const decision = payload.decision_record || {};
         const followUp = payload.follow_up || {};
+        const record = payload.operational_record || {};
         const proposalReady = action?.action_type === "record_decision" ? Boolean(decision.title && decision.decision)
           : action?.action_type === "schedule_follow_up" ? Boolean(followUp.follow_up_at && followUp.subject && followUp.body)
           : true;
@@ -88,6 +91,7 @@ function renderCommitments() {
           ${action?.action_type === "calendar_event" ? `<details class="draft-editor"><summary>Preview or edit Calendar proposal</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><input data-event-start="${action.id}" value="${escapeHtml(event.start_at || "")}" placeholder="Start ISO date/time"><input data-event-end="${action.id}" value="${escapeHtml(event.end_at || "")}" placeholder="End ISO date/time"><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save proposal</button></div></details>` : ""}
           ${action?.action_type === "record_decision" ? `<details class="draft-editor" open><summary>Decision record · ${escapeHtml(group.email.entity_name || "no company or project linked")}</summary><div class="draft-editor-body"><input data-decision-title="${action.id}" value="${escapeHtml(decision.title || item.title)}" aria-label="Decision title"><textarea data-decision-outcome="${action.id}" aria-label="Decision outcome" placeholder="Enter the final decision before approval">${escapeHtml(decision.decision || "")}</textarea><textarea data-decision-rationale="${action.id}" aria-label="Decision rationale" placeholder="Rationale (optional)">${escapeHtml(decision.rationale || "")}</textarea><button class="button secondary" data-save-decision="${action.id}">Save decision proposal</button></div></details>` : ""}
           ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor" open><summary>Scheduled follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up</button></div></details>` : ""}
+          ${action?.action_type === "create_operational_record" ? `<details class="draft-editor"><summary>${escapeHtml(record.record_type?.replaceAll("_", " ") || "Business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save proposal</button></div></details>` : ""}
           <div class="card-actions">
             ${action?.status === "pending_approval" && proposalReady ? `<button class="button approve" data-approve="${action.id}">Approve</button>` : ""}
             ${action?.status === "pending_approval" && !proposalReady ? '<span class="pill">Complete proposal first</span>' : ""}
@@ -96,7 +100,8 @@ function renderCommitments() {
             ${action?.status === "approved" && action.action_type === "calendar_event" ? `<button class="button execute" data-execute="${action.id}">Create Calendar event</button>` : ""}
             ${action?.status === "approved" && action.action_type === "record_decision" ? `<button class="button execute" data-execute="${action.id}">Record decision</button>` : ""}
             ${action?.status === "approved" && action.action_type === "schedule_follow_up" ? `<button class="button execute" data-execute="${action.id}">Activate follow-up</button>` : ""}
-            ${action?.status === "approved" && !["draft_reply", "calendar_event", "record_decision", "schedule_follow_up"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
+            ${action?.status === "approved" && action.action_type === "create_operational_record" ? `<button class="button execute" data-execute="${action.id}">Create ${escapeHtml(record.record_type?.replaceAll("_", " ") || "record")}</button>` : ""}
+            ${action?.status === "approved" && !["draft_reply", "calendar_event", "record_decision", "schedule_follow_up", "create_operational_record"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
             <button class="button secondary" data-complete="${item.id}">Mark complete</button>
           </div>
         </article>`;
@@ -112,6 +117,7 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
   elements.commitments.querySelectorAll("[data-save-follow-up]").forEach(button => button.addEventListener("click", () => saveFollowUpProposal(button.dataset.saveFollowUp)));
+  elements.commitments.querySelectorAll("[data-save-record]").forEach(button => button.addEventListener("click", () => saveOperationalRecord(button.dataset.saveRecord)));
 }
 
 function renderCalendarEvents() {
@@ -124,6 +130,15 @@ function renderCalendarEvents() {
         <span>${escapeHtml(event.entity_names || "Unmatched")}</span>
       </div>
     </article>`).join("") : '<p class="empty-state">No Calendar events imported yet.</p>';
+}
+
+function renderOperationalRecords() {
+  elements.operationalRecords.innerHTML = state.operationalRecords.length ? state.operationalRecords.map(record => `
+    <article class="list-card">
+      <h3>${escapeHtml(record.title)}</h3>
+      <div class="meta"><span class="pill">${escapeHtml(record.record_type.replaceAll("_", " "))}</span><span class="pill ${escapeHtml(record.priority)}">${escapeHtml(record.priority)}</span><span>${escapeHtml(record.entity_name || "Unassigned")}</span></div>
+      <p>${escapeHtml(record.next_action)}</p>
+    </article>`).join("") : '<p class="empty-state">No business records created yet.</p>';
 }
 
 function updateMetrics() {
@@ -229,7 +244,7 @@ function renderRevisionDrafts() {
 async function refresh() {
   document.body.classList.add("loading");
   try {
-    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, inboxSchedule, runs, reviewQueue, workQueue] = await Promise.all([
+    const [entities, commitments, actions, calendar, documents, references, comparisons, drafts, schedule, inboxSchedule, runs, reviewQueue, workQueue, operationalRecords] = await Promise.all([
       api("/entities"), api("/commitments?status=open"), api("/actions"), api("/calendar/events"),
       api("/documents"), api("/documents/trusted-references"), api("/documents/comparisons"), api("/documents/revision-drafts"),
       api("/automation/contract-intake/schedule"),
@@ -237,6 +252,7 @@ async function refresh() {
       api("/automation/runs"),
       api("/automation/review-queue"),
       api("/automation/work-queue"),
+      api("/operational-records"),
     ]);
     state.entities = entities.entities;
     state.commitments = commitments.commitments;
@@ -251,8 +267,9 @@ async function refresh() {
     state.automationRuns = runs.runs;
     state.reviewQueue = reviewQueue.items;
     state.workQueue = workQueue.groups;
+    state.operationalRecords = operationalRecords.records;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
-    renderEntities(); renderCommitments(); renderCalendarEvents();
+    renderEntities(); renderCommitments(); renderCalendarEvents(); renderOperationalRecords();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
     renderInboxSchedule();
@@ -436,6 +453,21 @@ async function saveFollowUpProposal(id) {
   try {
     await api(`/actions/${id}/follow-up-proposal`, { method: "PUT", body: JSON.stringify(proposal) });
     notify("Follow-up saved. Approve it before activation."); await refresh();
+  } catch (error) { notify(error.message, true); }
+}
+
+async function saveOperationalRecord(id) {
+  const action = state.actions.find(item => String(item.id) === String(id));
+  const existing = parseJson(action?.payload_json).operational_record || {};
+  const value = name => elements.commitments.querySelector(`[data-record-${name}="${id}"]`).value.trim();
+  const amountText = value("amount");
+  const proposal = { ...existing, title: value("title"), owner: value("owner") || null,
+    due_at: value("due") || null, next_action: value("next"), notes: value("notes") || null,
+    amount: amountText ? Number(amountText) : null, currency: value("currency") || null };
+  if (!proposal.title || !proposal.next_action) { notify("Title and next action are required.", true); return; }
+  try {
+    await api(`/actions/${id}/operational-record`, { method: "PUT", body: JSON.stringify(proposal) });
+    notify("Business record proposal saved."); await refresh();
   } catch (error) { notify(error.message, true); }
 }
 
