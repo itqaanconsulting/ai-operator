@@ -726,9 +726,11 @@ class Database:
 
     def list_work_queue(self):
         commitments = self.list_rows("commitments", "open")
+        open_commitment_ids = {row["id"] for row in commitments}
         actions = [row for row in self.list_rows("proposed_actions")
-                   if row["status"] in {"pending_approval", "approved"}]
-        email_ids = sorted({row["email_id"] for row in commitments + actions if row.get("email_id")})
+                   if row["status"] in {"pending_approval", "approved"}
+                   and row.get("commitment_id") in open_commitment_ids]
+        email_ids = sorted({row["email_id"] for row in commitments if row.get("email_id")})
         with self.connect() as connection:
             emails = {}
             for email_id in email_ids:
@@ -1815,10 +1817,11 @@ class Database:
             connection.execute(
                 """UPDATE proposed_actions
                    SET status = ?, decision_note = ?, decided_at = CURRENT_TIMESTAMP
-                   WHERE commitment_id = ? AND status = ?""",
+                   WHERE commitment_id = ? AND status IN (?, ?)""",
                 (ActionStatus.REJECTED.value,
                  f"Closed automatically when commitment completed. {note or ''}".strip(),
-                 commitment_id, ActionStatus.PENDING_APPROVAL.value),
+                 commitment_id, ActionStatus.PENDING_APPROVAL.value,
+                 ActionStatus.APPROVED.value),
             )
             connection.execute(
                 """UPDATE scheduled_follow_ups SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP

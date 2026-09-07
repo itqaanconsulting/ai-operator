@@ -129,6 +129,19 @@ class DatabaseTest(unittest.TestCase):
         action = next(row for row in self.db.list_rows("proposed_actions") if row["id"] == action_id)
         self.assertEqual(action["status"], "rejected")
 
+    def test_completed_work_never_leaves_an_empty_email_in_work_queue(self):
+        _, commitment_id, action_id = self.db.save_analysis(
+            EmailRequest(subject="Old project", body="Please handle"),
+            EmailAnalysis(category="task", summary="Task", commitment_title="Handle task",
+                          proposed_action="Handle the task"),
+        )
+        self.db.decide_action(action_id, ActionStatus.APPROVED, "Approved")
+        self.db.complete_commitment(commitment_id, "Dismissed")
+
+        action = next(row for row in self.db.list_rows("proposed_actions") if row["id"] == action_id)
+        self.assertEqual(action["status"], "rejected")
+        self.assertEqual(self.db.list_work_queue(), [])
+
     def test_reply_draft_can_be_edited_before_execution(self):
         _, _, action_id = self.db.save_analysis(
             EmailRequest(subject="Reply", body="Please reply"),
