@@ -20,6 +20,8 @@ automatically.
   only after a separate human confirmation, with duplicate-card protection.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
+- Provides an authenticated n8n schedule entry point for proactive Gmail intake;
+  it reports whether human review is needed but cannot approve or execute actions.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.

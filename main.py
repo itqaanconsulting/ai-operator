@@ -1,9 +1,10 @@
 import json
+import hmac
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -58,7 +59,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.31.0")
+app = FastAPI(title="AI Commitment Operator", version="0.32.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -298,6 +299,48 @@ def run_inbox_automation(request: GmailImportRequest):
     """Analyze labeled mail and monitor open loops in one audited, read-only run."""
     try:
         return _execute_inbox_automation(request.label, request.max_results, "manual")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _n8n_shared_secret():
+    secret = os.getenv("N8N_SHARED_SECRET") or os.getenv("N8N_TRELLO_WEBHOOK_SECRET")
+    if secret:
+        return secret
+    local_environment = Path(__file__).parent / ".env.n8n"
+    if local_environment.exists():
+        for line in local_environment.read_text(encoding="utf-8-sig").splitlines():
+            if line.startswith("AI_OPERATOR_WEBHOOK_SECRET="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _require_n8n_secret(supplied_secret: str | None):
+    expected_secret = _n8n_shared_secret()
+    if not expected_secret:
+        raise HTTPException(status_code=503, detail="The n8n integration is not configured")
+    if not supplied_secret or not hmac.compare_digest(supplied_secret, expected_secret):
+        raise HTTPException(status_code=401, detail="Invalid n8n integration secret")
+
+
+@app.post("/integrations/n8n/inbox-scan")
+def run_n8n_inbox_automation(
+    request: GmailImportRequest,
+    x_ai_operator_secret: str | None = Header(default=None),
+):
+    """Allow authenticated n8n schedules to start the read-only inbox pipeline."""
+    _require_n8n_secret(x_ai_operator_secret)
+    try:
+        result = _execute_inbox_automation(request.label, request.max_results, "n8n")
+        result["new_work_count"] = len(result["processed"])
+        result["requires_human_review"] = bool(
+            result["processed"]
+            or result["follow_up_monitor"]["created"]
+            or result["open_loop_monitor"]["created"]
+            or result.get("document_automation", {}).get("review_ready")
+        )
+        result["external_action_taken"] = False
+        return result
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -790,15 +833,7 @@ def _n8n_trello_config():
     webhook_url = os.getenv(
         "N8N_TRELLO_WEBHOOK_URL", "http://127.0.0.1:5678/webhook/ai-operator-trello"
     )
-    webhook_secret = os.getenv("N8N_TRELLO_WEBHOOK_SECRET")
-    if not webhook_secret:
-        local_environment = Path(__file__).parent / ".env.n8n"
-        if local_environment.exists():
-            for line in local_environment.read_text(encoding="utf-8-sig").splitlines():
-                if line.startswith("AI_OPERATOR_WEBHOOK_SECRET="):
-                    webhook_secret = line.split("=", 1)[1].strip()
-                    break
-    return webhook_url, webhook_secret or ""
+    return webhook_url, _n8n_shared_secret()
 
 
 @app.post("/operational-records/{record_id}/send-to-trello")

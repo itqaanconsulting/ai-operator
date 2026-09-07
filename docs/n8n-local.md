@@ -69,3 +69,21 @@ Display the generated webhook secret locally with:
 ```
 
 Do not paste this secret into chat, Git, screenshots, or documentation.
+
+## Import the scheduled inbox workflow
+
+Import `n8n/scheduled-inbox-scan.json`. It contains this safe orchestration:
+
+```text
+every 15 minutes -> authenticated inbox scan -> human-review decision branch
+```
+
+In **Run safe AI inbox scan**, select the same Header Auth credential used for
+the Trello webhook: header `X-AI-Operator-Secret` with the local secret from
+`.env.n8n`. The URL uses `host.docker.internal`, which lets the n8n container
+reach the FastAPI application running on the Windows host.
+
+Execute the workflow manually once before publishing it. The result includes
+`new_work_count`, `requires_human_review`, and `external_action_taken: false`.
+The workflow can read and analyze labeled mail and create internal approval
+items, but it cannot approve them or perform Gmail, Calendar, or Trello writes.

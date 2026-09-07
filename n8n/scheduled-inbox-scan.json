@@ -1,0 +1,67 @@
+{
+  "name": "AI Operator - Scheduled inbox scan",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "minutes", "minutesInterval": 15}]
+        }
+      },
+      "id": "7d349d27-45e5-4d98-b51c-e5486bd0d16d",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/integrations/n8n/inbox-scan",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{\"label\":\"AI-Operator\",\"max_results\":10}",
+        "options": {"timeout": 120000}
+      },
+      "id": "db084bb8-418a-46f6-bd1c-4cfaf8b0c1ae",
+      "name": "Run safe AI inbox scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2},
+          "conditions": [
+            {
+              "id": "review-required",
+              "leftValue": "={{ $json.requires_human_review }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "true", "singleValue": true}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fe2469cc-0cf6-4500-a0db-b144de28fb0e",
+      "name": "Human review needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [480, 0]
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": {"main": [[{"node": "Run safe AI inbox scan", "type": "main", "index": 0}]]},
+    "Run safe AI inbox scan": {"main": [[{"node": "Human review needed?", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "active": false,
+  "versionId": "135a74fe-2de4-4a4c-981b-4ca5387e43b7",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
