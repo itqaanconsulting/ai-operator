@@ -80,6 +80,16 @@ Docker Desktop opens visibly and every engine check has a timeout, so a frozen e
 The script requests Windows administrator access when needed so it can restart the Docker system service.
 It also resets WSL before restarting Docker, which repairs the container network after a frozen Docker engine. This temporarily stops other running WSL distributions.
 
+At the end of a work session, stop the project containers and Docker Desktop cleanly with:
+
+```powershell
+.\scripts\stop-ai-operator-and-docker.ps1
+```
+
+The script first runs Docker Compose `down`, preserving the SQLite database and
+n8n volume, and then closes Docker Desktop through its official CLI. It does not
+force-kill Docker processes.
+
 This Docker Compose setup keeps both web ports bound to localhost and gives n8n
 a private internal connection to the API. See `docs/n8n-local.md`.
 
