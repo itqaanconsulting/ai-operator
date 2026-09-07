@@ -3,14 +3,31 @@ $ErrorActionPreference = "Stop"
 $projectDirectory = Split-Path -Parent $PSScriptRoot
 $stopScript = Join-Path $PSScriptRoot "stop-n8n.ps1"
 $startScript = Join-Path $PSScriptRoot "start-n8n.ps1"
+$dockerRecoveryScript = Join-Path $PSScriptRoot "restart-docker-and-ai-operator.ps1"
+
+function Test-DockerEngine {
+    try {
+        $check = Start-Process -FilePath "docker.exe" -ArgumentList "info" -PassThru -WindowStyle Hidden
+        if (-not $check.WaitForExit(5000)) {
+            $check.Kill()
+            $check.WaitForExit()
+            return $false
+        }
+        return $check.ExitCode -eq 0
+    }
+    catch {
+        return $false
+    }
+}
+
+if (-not (Test-DockerEngine)) {
+    Write-Host "Docker engine is unavailable. Starting full Docker recovery..." -ForegroundColor Yellow
+    & $dockerRecoveryScript
+    exit
+}
 
 Push-Location $projectDirectory
 try {
-    docker info *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Docker Desktop is not running. Start Docker Desktop and wait until it says Engine running."
-    }
-
     Write-Host "Restarting the AI Operator stack..." -ForegroundColor Cyan
     & $stopScript
     & $startScript

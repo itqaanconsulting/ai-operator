@@ -67,7 +67,7 @@ After changing the application, restart and rebuild only the AI Operator stack w
 .\scripts\restart-ai-operator.ps1
 ```
 
-This preserves the SQLite database and n8n data. It does not stop Docker Desktop or unrelated containers.
+This is the default command to use. It preserves the SQLite database and n8n data. When Docker is healthy, it only restarts the AI Operator stack. When the Docker engine is unavailable, it automatically starts the full Docker recovery flow.
 
 If Docker Desktop itself is stuck, use the full recovery script:
 
