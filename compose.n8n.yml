@@ -1,4 +1,23 @@
 services:
+  ai-operator-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-operator-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /data/operator.db
+      N8N_TRELLO_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-trello
+      N8N_SHARED_SECRET: ${AI_OPERATOR_WEBHOOK_SECRET}
+    volumes:
+      - ./operator.db:/data/operator.db
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.pickle:/app/token.pickle
+
   n8n:
     image: docker.n8n.io/n8nio/n8n:2.32.7
     container_name: ai-operator-n8n

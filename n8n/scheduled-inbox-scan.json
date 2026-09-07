@@ -16,7 +16,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8000/integrations/n8n/inbox-scan",
+        "url": "http://ai-operator-api:8000/integrations/n8n/inbox-scan",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

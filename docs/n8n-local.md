@@ -1,7 +1,8 @@
 # Local n8n
 
 The AI Operator uses n8n as the integration layer for systems such as Trello.
-n8n runs locally in Docker and is only exposed on `127.0.0.1:5678`.
+FastAPI and n8n run on one private Docker network. Their dashboard ports are
+published only on `127.0.0.1`.
 
 ## Start
 
@@ -11,9 +12,15 @@ Open PowerShell in the repository and run:
 .\scripts\start-n8n.ps1
 ```
 
-The first run downloads the pinned n8n image and can take several minutes. Open
+The first run builds the FastAPI image, downloads the pinned n8n image, and can
+take several minutes. Open
 `http://127.0.0.1:5678` after the container has started and create the local n8n
 owner account. This account exists only in the local persistent Docker volume.
+
+The stack bind-mounts `operator.db`, `credentials.json`, and `token.pickle` from
+the repository. They remain local and are excluded from both the Docker image
+and Git. The script stops an existing local `uvicorn main:app` process before
+starting the container, but refuses to stop an unrelated process on port 8000.
 
 The script creates `.env.n8n` with a random encryption key. This file is ignored
 by Git. Keep it together with the Docker volume because n8n needs the same key to
@@ -24,6 +31,7 @@ decrypt stored credentials.
 ```powershell
 docker compose --env-file .env.n8n -f compose.n8n.yml ps
 docker compose --env-file .env.n8n -f compose.n8n.yml logs --tail 100 n8n
+docker compose --env-file .env.n8n -f compose.n8n.yml logs --tail 100 ai-operator-api
 ```
 
 ## Stop
@@ -80,8 +88,8 @@ every 15 minutes -> authenticated inbox scan -> human-review decision branch
 
 In **Run safe AI inbox scan**, select the same Header Auth credential used for
 the Trello webhook: header `X-AI-Operator-Secret` with the local secret from
-`.env.n8n`. The URL uses `host.docker.internal`, which lets the n8n container
-reach the FastAPI application running on the Windows host.
+`.env.n8n`. The URL uses the private Compose hostname `ai-operator-api`; it is
+not a public endpoint and does not depend on Docker-to-Windows host networking.
 
 Execute the workflow manually once before publishing it. The result includes
 `new_work_count`, `requires_human_review`, and `external_action_taken: false`.

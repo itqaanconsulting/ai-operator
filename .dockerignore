@@ -1,0 +1,14 @@
+.env
+.env.n8n
+.git
+.pytest_cache
+__pycache__
+*.db
+*.pickle
+*.pyc
+credentials.json
+docs
+n8n
+scripts
+tests
+venv

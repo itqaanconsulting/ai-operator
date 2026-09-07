@@ -3,6 +3,11 @@ $ErrorActionPreference = "Stop"
 $projectDirectory = Split-Path -Parent $PSScriptRoot
 $environmentFile = Join-Path $projectDirectory ".env.n8n"
 $composeFile = Join-Path $projectDirectory "compose.n8n.yml"
+$applicationEnvironmentFile = Join-Path $projectDirectory ".env"
+
+if (-not (Test-Path -LiteralPath $applicationEnvironmentFile)) {
+    throw "Missing .env. Configure the AI Operator before starting the Docker stack."
+}
 
 if (-not (Test-Path -LiteralPath $environmentFile)) {
     $secretBytes = New-Object byte[] 48
@@ -28,9 +33,21 @@ if (-not (Select-String -LiteralPath $environmentFile -Pattern '^AI_OPERATOR_WEB
     Write-Host "Created local AI Operator webhook secret in .env.n8n"
 }
 
-docker compose --env-file $environmentFile -f $composeFile up -d
+$listener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if ($listener) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
+    if ($process.CommandLine -notlike "*uvicorn*main:app*") {
+        throw "Port 8000 belongs to an unrelated process; refusing to stop it."
+    }
+    Stop-Process -Id $listener.OwningProcess -Force
+    Write-Host "Stopped the host AI Operator so Docker can use port 8000"
+}
+
+docker compose --env-file $environmentFile -f $composeFile up -d --build
 if ($LASTEXITCODE -ne 0) {
     throw "Docker Compose could not start n8n."
 }
 
+Write-Host "AI Operator is starting at http://127.0.0.1:8000"
 Write-Host "n8n is starting at http://127.0.0.1:5678"

@@ -55,6 +55,15 @@ Start the API:
 uvicorn main:app --reload
 ```
 
+Alternatively, start both the API and the local n8n integration layer with:
+
+```powershell
+.\scripts\start-n8n.ps1
+```
+
+This Docker Compose setup keeps both web ports bound to localhost and gives n8n
+a private internal connection to the API. See `docs/n8n-local.md`.
+
 Open `http://127.0.0.1:8000/docs` to use the interactive API documentation.
 
 For the operator dashboard, open `http://127.0.0.1:8000/dashboard`.
