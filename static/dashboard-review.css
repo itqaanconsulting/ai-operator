@@ -1,0 +1,7 @@
+.work-group-header > div { display: grid; gap: 4px; }
+.source-label, .finding-heading > span { color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.finding-heading { display: grid; gap: 5px; margin-bottom: 9px; }
+.finding-heading h3 { font-size: 17px; line-height: 1.35; }
+.proposed-action h4 { margin: 5px 0 0; font-size: 15px; }
+.button.quiet-action { min-height: 40px; padding: 9px 2px; border: 0; color: var(--muted); background: transparent; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.button.quiet-action:hover { color: var(--ink); }

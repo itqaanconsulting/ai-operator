@@ -6,6 +6,7 @@
   <title>AI Operator</title>
   <link rel="stylesheet" href="/static/dashboard.css">
   <link rel="stylesheet" href="/static/dashboard-focus.css">
+  <link rel="stylesheet" href="/static/dashboard-review.css">
 </head>
 <body>
   <header class="topbar">
@@ -20,11 +21,10 @@
     <div id="notification" class="notification" role="status" hidden></div>
     <section id="documents-view" class="app-view inbox-view">
       <section class="inbox-header">
-        <div><p class="section-label">Inbox automation</p><h2>Work waiting for you</h2><p id="last-inbox-run" class="status-copy">No inbox scan recorded.</p></div>
-        <button id="gmail-import-button" class="button primary">Scan Gmail now</button>
+        <div><p class="section-label">Automation active</p><h2>Needs your attention</h2><p id="last-inbox-run" class="status-copy">Waiting for the first n8n inbox scan.</p></div>
       </section>
       <section class="review-panel">
-        <div class="review-heading"><div><h2>Review inbox</h2><p>Approve, edit, or complete the next action for each email.</p></div><span id="review-count" class="count-badge">0 items</span></div>
+        <div class="review-heading"><div><h2>AI review inbox</h2><p>Each card shows one finding and the action AI recommends.</p></div><span id="review-count" class="count-badge">0 items</span></div>
         <div id="commitments" class="item-list work-list"></div>
       </section>
       <details class="more-panel">
