@@ -6,7 +6,7 @@ from pathlib import Path
 
 from calendar_operator import CalendarOperator
 from database import Database
-from models import EmailAnalysis, EmailRequest
+from models import CalendarEventProposalUpdateRequest, EmailAnalysis, EmailRequest, EmailWorkItem
 
 
 class Executable:
@@ -41,6 +41,18 @@ class FakeCalendarService:
 
 
 class CalendarOperatorTest(unittest.TestCase):
+    def test_missing_end_defaults_to_thirty_minutes(self):
+        proposal = CalendarEventProposalUpdateRequest(
+            title="Future review", start_at="2030-09-18T10:00:00+02:00"
+        )
+        self.assertEqual(proposal.end_at, "2030-09-18T10:30:00+02:00")
+
+    def test_past_start_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "must be in the future"):
+            CalendarEventProposalUpdateRequest(
+                title="Old review", start_at="2020-09-18T10:00:00+02:00"
+            )
+
     def test_calendar_events_are_normalized_from_bounded_window(self):
         service = FakeCalendarService([{
             "id": "event-1",
@@ -141,6 +153,35 @@ class CalendarDatabaseTest(unittest.TestCase):
         self.assertTrue(created)
         listed = self.db.list_calendar_events()
         self.assertIsNone(listed[0]["entity_names"])
+
+    def test_failed_calendar_action_can_be_corrected_for_new_approval(self):
+        _, _, action_id = self.db.save_analysis(
+            EmailRequest(subject="Meeting", body="Schedule a meeting"),
+            EmailAnalysis(
+                category="meeting", summary="Meeting requested.",
+                work_items=[EmailWorkItem(
+                    kind="meeting", title="Planning call", proposed_action="Create meeting",
+                    start_at="2030-09-18T10:00:00+02:00",
+                    end_at="2030-09-18T10:30:00+02:00",
+                )],
+            ),
+        )
+        from models import ActionStatus
+        self.db.decide_action(action_id, ActionStatus.APPROVED, "Approved")
+        self.db.claim_approved_action(action_id)
+        self.db.fail_action(action_id, "Temporary failure")
+
+        updated = self.db.update_action_payload(
+            action_id,
+            {"calendar_event": {
+                "title": "Planning call", "start_at": "2030-09-18T11:00:00+02:00",
+                "end_at": "2030-09-18T11:30:00+02:00", "location": None, "attendees": [],
+            }},
+            {"calendar_event"}, allow_failed_retry=True,
+        )
+
+        self.assertEqual(updated["status"], "pending_approval")
+        self.assertIsNone(updated["error_message"])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ automatically.
   support cases, document-review tasks, and escalation records.
 - Sends an approved business record to Trello through a published n8n workflow
   only after a separate human confirmation, with duplicate-card protection.
+- Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
+  past times, and returns corrected failed proposals to the approval queue.
 - Prevents duplicate storage when a Gmail message ID is provided.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.

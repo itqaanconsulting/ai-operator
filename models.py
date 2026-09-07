@@ -1,7 +1,10 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def normalize_confidence(value):
@@ -89,9 +92,34 @@ class ActionDraftUpdateRequest(BaseModel):
 class CalendarEventProposalUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     start_at: str = Field(min_length=10, max_length=50)
-    end_at: str = Field(min_length=10, max_length=50)
+    end_at: str | None = Field(default=None, max_length=50)
     location: str | None = Field(default=None, max_length=500)
     attendees: list[str] = Field(default_factory=list, max_length=50)
+
+    @staticmethod
+    def _parse_time(value: str, field_name: str, default_timezone=None):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid ISO date and time") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=default_timezone or ZoneInfo("Europe/Amsterdam"))
+        return parsed
+
+    @model_validator(mode="after")
+    def validate_times(self):
+        start = self._parse_time(self.start_at, "start_at")
+        if start.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+            raise ValueError("Calendar start time must be in the future")
+        end = (
+            self._parse_time(self.end_at, "end_at", start.tzinfo)
+            if self.end_at else start + timedelta(minutes=30)
+        )
+        if end <= start:
+            raise ValueError("Calendar end time must be after the start time")
+        self.start_at = start.isoformat()
+        self.end_at = end.isoformat()
+        return self
 
 
 class DecisionProposalUpdateRequest(BaseModel):

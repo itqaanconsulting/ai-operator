@@ -58,7 +58,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.30.0")
+app = FastAPI(title="AI Commitment Operator", version="0.31.0")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -221,6 +221,7 @@ def update_action_draft(action_id: int, request: ActionDraftUpdateRequest):
 def update_calendar_proposal(action_id: int, request: CalendarEventProposalUpdateRequest):
     action = database.update_action_payload(
         action_id, {"calendar_event": request.model_dump()}, {"calendar_event"},
+        allow_failed_retry=True,
     )
     if action is None:
         raise HTTPException(status_code=409, detail="Editable Calendar proposal was not found")

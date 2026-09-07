@@ -1514,20 +1514,33 @@ class Database:
             ).fetchone()
             return dict(row)
 
-    def update_action_payload(self, action_id: int, updates: dict, allowed_types: set[str]):
+    def update_action_payload(self, action_id: int, updates: dict, allowed_types: set[str],
+                              allow_failed_retry: bool = False):
         with self.connect() as connection:
+            editable_statuses = ["pending_approval", "approved"]
+            if allow_failed_retry:
+                editable_statuses.append("failed")
+            placeholders = ",".join("?" for _ in editable_statuses)
             row = connection.execute(
-                """SELECT * FROM proposed_actions WHERE id = ?
-                   AND status IN ('pending_approval', 'approved')""", (action_id,)
+                f"""SELECT * FROM proposed_actions WHERE id = ?
+                    AND status IN ({placeholders})""", (action_id, *editable_statuses)
             ).fetchone()
             if not row or row["action_type"] not in allowed_types:
                 return None
             payload = json.loads(row["payload_json"] or "{}")
             payload.update(updates)
-            connection.execute(
-                "UPDATE proposed_actions SET payload_json = ? WHERE id = ?",
-                (json.dumps(payload), action_id),
-            )
+            if row["status"] == "failed" and allow_failed_retry:
+                connection.execute(
+                    """UPDATE proposed_actions
+                       SET payload_json = ?, status = 'pending_approval', error_message = NULL,
+                           decision_note = NULL, decided_at = NULL
+                       WHERE id = ?""", (json.dumps(payload), action_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE proposed_actions SET payload_json = ? WHERE id = ?",
+                    (json.dumps(payload), action_id),
+                )
             connection.execute(
                 """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
                    VALUES ('action', ?, 'proposal_updated', ?)""",
