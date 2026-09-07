@@ -19,4 +19,8 @@
 .card-actions { padding-top: 12px; border-top: 1px solid var(--line); }
 .button.quiet-action { min-height: 40px; padding: 9px 2px; border: 0; color: var(--muted); background: transparent; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .button.quiet-action:hover { color: var(--ink); }
+.secondary-action-menu { margin-left: auto; }
+.secondary-action-menu > summary { min-height: 40px; padding: 10px 4px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.secondary-action-menu > div { display: grid; max-width: 260px; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfa; }
+.secondary-action-menu small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 @media (max-width: 560px) { .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
