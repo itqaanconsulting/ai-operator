@@ -61,6 +61,22 @@ Alternatively, start both the API and the local n8n integration layer with:
 .\scripts\start-n8n.ps1
 ```
 
+After changing the application, restart and rebuild only the AI Operator stack with:
+
+```powershell
+.\scripts\restart-ai-operator.ps1
+```
+
+This preserves the SQLite database and n8n data. It does not stop Docker Desktop or unrelated containers.
+
+If Docker Desktop itself is stuck, use the full recovery script:
+
+```powershell
+.\scripts\restart-docker-and-ai-operator.ps1
+```
+
+This restarts Docker Desktop, waits for the engine, and then rebuilds the AI Operator stack. It also temporarily stops any other containers running in Docker Desktop.
+
 This Docker Compose setup keeps both web ports bound to localhost and gives n8n
 a private internal connection to the API. See `docs/n8n-local.md`.
 
