@@ -3,194 +3,62 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Commitment Operator</title>
+  <title>AI Operator</title>
   <link rel="stylesheet" href="/static/dashboard.css">
-  <style>
-    .workflow-guide { background: transparent; border: 0; }
-    .workflow-guide > summary { display: inline-flex; padding: 5px 2px; color: var(--muted); font-size: .7rem; }
-    .workflow-guide-content { padding: 12px 16px; margin-top: 7px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
-    .workflow-guide-content > p { margin-bottom: 12px; color: var(--muted); font-size: .72rem; }
-    .expandable-section > summary { display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; color: var(--ink); font-size: .8rem; }
-    .expandable-section > summary small { color: var(--muted); font-size: .66rem; font-weight: 400; }
-    .expandable-section[open] > summary { border-bottom: 1px solid var(--line); }
-    .embedded-grid { gap: 0; }
-    .embedded-section + .embedded-section { border-left: 1px solid var(--line); }
-    .embedded-section .panel-heading { padding: 14px 18px; }
-    .ask-operator { padding: 16px; }
-    .ask-operator > div { margin-bottom: 9px; }
-    .ask-operator h2 { font-size: 1rem; }
-    .plan-steps { grid-column: 1 / -1; }
-    .plan-steps ol { display: grid; gap: 8px; padding: 0; margin: 7px 0 0; list-style: none; }
-    .plan-steps li { display: grid; gap: 2px; }
-    .plan-steps li strong { color: var(--ink); font-size: .72rem; text-transform: none; }
-    .plan-steps li span { color: var(--muted); font-size: .65rem; }
-    .compact-tool { padding: 0; }
-    .compact-tool > summary { padding: 13px 16px; color: var(--ink); }
-    .compact-tool-body { padding: 0 16px 16px; }
-    .mail-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 0; margin: 0; list-style: none; }
-    .mail-flow li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .7rem; font-weight: 700; }
-    .mail-flow li:not(:last-child)::after { content: "→"; margin-left: auto; padding-right: 14px; color: #b8bfbc; }
-    .mail-flow span, .step-number { display: grid; min-width: 25px; height: 25px; place-items: center; border-radius: 50%; background: var(--primary); color: #fff; font-size: .64rem; font-weight: 800; }
-    .mail-step { overflow: hidden; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
-    .mail-step.active-step { display: flex; justify-content: space-between; align-items: center; padding: 17px 18px; }
-    .step-heading { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
-    .active-step .step-heading { padding: 0; border: 0; }
-    .step-heading h2 { margin-bottom: 3px; }
-    .step-heading p { color: var(--muted); font-size: .7rem; }
-    .advanced-tools > summary { padding: 15px 18px; color: var(--ink); font-size: .78rem; }
-    .advanced-tools-body { display: grid; gap: 12px; padding: 12px; border-top: 1px solid var(--line); background: var(--canvas); }
-    .inbox-schedule-row { margin-top: -14px; background: #fff; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; }
-    .inbox-schedule-row > summary { padding: 10px 18px; }
-    .inbox-schedule-control { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; }
-    .inbox-schedule-control label { margin-left: auto; }
-    .inbox-schedule-control input { width: 58px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
-    .last-run-summary { margin-top: 5px; color: var(--muted); font-size: .65rem; }
-    .work-group { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-    .work-group-header { display: flex; justify-content: space-between; gap: 12px; padding: 11px 13px; background: #fafbfa; border-bottom: 1px solid var(--line); }
-    .work-group-header strong { font-size: .76rem; }
-    .work-group-header span { color: var(--muted); font-size: .65rem; }
-    .work-item { padding: 13px; }
-    .work-item + .work-item { border-top: 1px solid var(--line); }
-    .proposed-action { margin-top: 9px; padding: 9px 11px; background: var(--soft); border-radius: 7px; }
-    .proposed-action span { color: var(--primary); font-size: .6rem; font-weight: 800; text-transform: uppercase; }
-    .proposed-action p { margin-top: 3px; font-size: .73rem; }
-    .draft-editor { margin-top: 9px; border: 1px solid var(--line); border-radius: 7px; }
-    .draft-editor > summary { padding: 9px 11px; color: var(--ink); }
-    .draft-editor-body { display: grid; gap: 7px; padding: 10px; border-top: 1px solid var(--line); }
-    .draft-editor input, .draft-editor textarea { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: .72rem; }
-    .draft-editor textarea { min-height: 110px; resize: vertical; }
-    .calendar-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-    .calendar-editor-grid .wide { grid-column: 1 / -1; }
-    @media (max-width: 850px) { .embedded-section + .embedded-section { border-left: 0; border-top: 1px solid var(--line); } }
-    @media (max-width: 650px) { .mail-flow { grid-template-columns: 1fr 1fr; gap: 9px; } .mail-flow li::after { display: none; } }
-  </style>
+  <link rel="stylesheet" href="/static/dashboard-focus.css">
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <p class="eyebrow">Executive operations</p>
-      <h1>AI Commitment Operator</h1>
-    </div>
-    <div class="topbar-actions">
-      <span class="safety-badge">Automatic sending off</span>
-      <button id="refresh-button" class="text-button">Refresh</button>
-      <button id="monitor-button" class="button primary" hidden>Run open-loop monitor</button>
-    </div>
+    <div class="brand"><span class="brand-mark">AI</span><div><h1>AI Operator</h1><p>Review work found in your inbox</p></div></div>
+    <div class="topbar-actions"><span class="safety-badge">Human approval on</span><button id="refresh-button" class="button quiet">Refresh</button></div>
   </header>
-
   <nav class="view-tabs" aria-label="Operator workspace">
-    <button class="view-tab active" data-view="documents">Inbox automation</button>
+    <button class="view-tab active" data-view="documents">Review inbox</button>
     <button class="view-tab" data-view="operations">Business context</button>
   </nav>
-
   <main>
-    <details class="ask-operator compact-tool" aria-label="Ask the AI operator">
-      <summary>Ask the operator</summary>
-      <div class="compact-tool-body">
-      <form id="operator-question-form">
-        <input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="Ask about a company, commitment, document, or next action…" required>
-        <button class="button primary" type="submit">Ask</button>
-      </form>
-      <div id="operator-answer" hidden></div>
-      </div>
-    </details>
-
-    <section class="metrics" aria-label="Operator summary">
-      <article><span id="entity-count">—</span><p>Entities</p></article>
-      <article><span id="commitment-count">—</span><p>Open commitments</p></article>
-      <article><span id="approval-count">—</span><p>Pending approvals</p></article>
-      <article><span id="overdue-count">—</span><p>Overdue</p></article>
-      <article><span id="document-count">—</span><p>Documents</p></article>
-    </section>
-
     <div id="notification" class="notification" role="status" hidden></div>
-
-    <section id="operations-view" class="workspace app-view" hidden>
-      <aside class="panel entity-panel">
-        <div class="panel-heading">
-          <div><p class="eyebrow">Context</p><h2>Companies & projects</h2></div>
-        </div>
-        <div id="entities" class="entity-list"></div>
-      </aside>
-
-      <section class="main-column">
-        <article class="panel executive-briefing-panel">
-          <div class="panel-heading status-heading">
-            <div><p class="eyebrow">Cross-system intelligence</p><h2>Executive briefing</h2><p class="heading-help">AI combines commitments, document risk, meetings, decisions, and automation health.</p></div>
-            <button id="briefing-button" class="button primary">Generate briefing</button>
-          </div>
-          <div id="briefing-content" class="empty-state">Generate a grounded briefing from current operator records.</div>
-        </article>
-
-        <article class="panel status-panel">
-          <div class="panel-heading status-heading">
-            <div><p class="eyebrow">Grounded intelligence</p><h2 id="status-title">Entity status</h2></div>
-            <button id="status-button" class="button secondary" disabled>Generate status brief</button>
-          </div>
-          <div id="status-content" class="empty-state">
-            Select a company or project to inspect its operational context.
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">Calendar context</p><h2>Imported events</h2></div></div>
-          <div id="calendar-events" class="item-list"></div>
-        </article>
-
-        <details class="panel expandable-section">
-          <summary>Created business records <small>Tasks · CRM · finance · support · reviews</small></summary>
-          <div id="operational-records" class="item-list"></div>
-        </details>
-
+    <section id="documents-view" class="app-view inbox-view">
+      <section class="inbox-header">
+        <div><p class="section-label">Inbox automation</p><h2>Work waiting for you</h2><p id="last-inbox-run" class="status-copy">No inbox scan recorded.</p></div>
+        <button id="gmail-import-button" class="button primary">Scan Gmail now</button>
       </section>
-    </section>
-
-    <section id="documents-view" class="document-workbench app-view">
-      <ol class="mail-flow" aria-label="Inbox automation flow">
-        <li><span>1</span>Scan Gmail</li><li><span>2</span>AI finds work</li><li><span>3</span>You approve</li><li><span>4</span>Create draft</li>
-      </ol>
-
-      <section class="mail-step active-step">
-        <div class="step-heading"><span class="step-number">1</span><div><h2>Scan Gmail</h2><p>Label emails <strong>AI-Operator</strong> in Gmail.</p><p id="last-inbox-run" class="last-run-summary">No inbox scan recorded.</p></div></div>
-        <button id="gmail-import-button" class="button primary">Scan Gmail</button>
+      <section class="review-panel">
+        <div class="review-heading"><div><h2>Review inbox</h2><p>Approve, edit, or complete the next action for each email.</p></div><span id="review-count" class="count-badge">0 items</span></div>
+        <div id="commitments" class="item-list work-list"></div>
       </section>
-      <details class="inbox-schedule-row">
-        <summary>Automatic scan</summary>
-        <div class="inbox-schedule-control">
-          <span id="inbox-schedule-status">Off</span>
-          <label>Every <input id="inbox-schedule-interval" type="number" min="1" max="1440" value="15"> minutes</label>
-          <button id="inbox-schedule-toggle" class="button secondary">Enable</button>
-        </div>
-      </details>
-
-      <section class="mail-step">
-        <div class="step-heading"><span class="step-number">2–4</span><div><h2>AI work queue</h2><p>Finding, proposed action and approval in one place.</p></div></div>
-        <div id="commitments" class="item-list"></div>
-      </section>
-
-      <details class="advanced-tools panel">
-        <summary>Advanced tools</summary>
-        <div class="advanced-tools-body">
-          <article class="panel attention-panel">
-            <div class="panel-heading"><div><h2>Document review queue</h2></div></div>
+      <details class="more-panel">
+        <summary>Automation &amp; document tools</summary>
+        <div class="more-panel-body">
+          <section class="settings-row"><div><h3>Automatic inbox scan</h3><p id="inbox-schedule-status">Off</p></div><div class="inline-control"><label>Every <input id="inbox-schedule-interval" type="number" min="1" max="1440" value="15"> minutes</label><button id="inbox-schedule-toggle" class="button secondary">Enable</button></div></section>
+          <article class="tool-section">
+            <div class="tool-heading"><div><h3>Document review</h3><p>Inspect contracts and other email attachments.</p></div><button id="gmail-attachments-button" class="button secondary">Scan attachments</button></div>
             <div id="review-queue" class="review-queue"></div>
+            <details class="nested-tool"><summary>Upload a document</summary><form id="document-upload-form" class="upload-form"><div><label for="document-file">PDF, DOCX, or TXT</label><input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required></div><button class="button secondary" type="submit">Analyze</button></form></details>
+            <details class="nested-tool"><summary>Contract scan schedule</summary><div class="schedule-control"><div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div><div class="inline-control"><label>Every <input id="schedule-interval" type="number" min="1" max="1440" value="15"> minutes</label><button id="schedule-toggle-button" class="button secondary">Configure</button></div></div></details>
           </article>
-          <article class="panel document-intake">
-            <div class="panel-heading"><div><h2>Contract documents</h2></div><button id="gmail-attachments-button" class="button secondary">Scan attachments</button></div>
-            <div class="secondary-options">
-              <details><summary>Upload a document</summary><form id="document-upload-form" class="upload-form"><div><label for="document-file">PDF, DOCX, or TXT</label><input id="document-file" name="file" type="file" accept=".pdf,.docx,.txt" required></div><button class="button secondary" type="submit">Analyze</button></form></details>
-              <details><summary>Automation schedule</summary><div class="schedule-control"><div><strong>Scheduled contract intake</strong><p id="schedule-status">Loading schedule…</p></div><div class="schedule-actions"><label for="schedule-interval">Every</label><input id="schedule-interval" type="number" min="1" max="1440" value="15" aria-label="Schedule interval in minutes"><span>minutes</span><button id="schedule-toggle-button" class="button secondary">Configure</button></div></div></details>
-            </div>
-          </article>
-          <details class="panel collapsible-panel"><summary><span>Automation history</span></summary><div id="automation-runs" class="run-list"></div></details>
-          <details class="panel expandable-section"><summary><span>Documents &amp; references</span></summary><div class="document-grid embedded-grid"><section class="embedded-section"><div class="panel-heading"><h2>Documents</h2></div><div id="documents" class="item-list"></div></section><section class="embedded-section"><div class="panel-heading"><h2>Trusted references</h2></div><div id="trusted-references" class="item-list"></div></section></div></details>
-          <details class="panel expandable-section"><summary><span>Document comparisons</span></summary><div id="comparisons" class="comparison-list"></div></details>
-          <details class="panel expandable-section"><summary><span>Revision drafts</span></summary><div id="revision-drafts" class="item-list"></div></details>
+          <details class="nested-tool"><summary>Automation history</summary><div id="automation-runs" class="run-list"></div></details>
+          <details class="nested-tool"><summary>Documents &amp; trusted references</summary><div class="document-grid"><section><h3>Documents</h3><div id="documents" class="item-list"></div></section><section><h3>Trusted references</h3><div id="trusted-references" class="item-list"></div></section></div></details>
+          <details class="nested-tool"><summary>Document comparisons</summary><div id="comparisons" class="comparison-list"></div></details>
+          <details class="nested-tool"><summary>Revision drafts</summary><div id="revision-drafts" class="item-list"></div></details>
         </div>
       </details>
+    </section>
+    <section id="operations-view" class="app-view context-view" hidden>
+      <header class="page-heading"><div><p class="section-label">Business memory</p><h2>Company &amp; project context</h2><p>Ask a question or open an entity to see what the operator knows.</p></div><button id="monitor-button" class="button secondary">Check open loops</button></header>
+      <details class="ask-operator" open><summary>Ask the operator</summary><div class="ask-body"><form id="operator-question-form"><input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="What is the status of Carrefour?" required><button class="button primary" type="submit">Ask</button></form><div id="operator-answer" hidden></div></div></details>
+      <section class="metrics" aria-label="Operator summary"><article><span id="entity-count">—</span><p>Entities</p></article><article><span id="commitment-count">—</span><p>Open items</p></article><article><span id="approval-count">—</span><p>Approvals</p></article><article><span id="overdue-count">—</span><p>Overdue</p></article><article><span id="document-count">—</span><p>Documents</p></article></section>
+      <div class="context-grid">
+        <aside class="panel entity-panel"><div class="panel-heading"><h2>Companies &amp; projects</h2></div><div id="entities" class="entity-list"></div></aside>
+        <section class="main-column">
+          <article class="panel"><div class="panel-heading status-heading"><div><h2>Executive briefing</h2><p>Combined priorities across all systems.</p></div><button id="briefing-button" class="button secondary">Generate</button></div><div id="briefing-content" class="empty-state">Generate a briefing from current operator records.</div></article>
+          <article class="panel"><div class="panel-heading status-heading"><h2 id="status-title">Entity status</h2><button id="status-button" class="button secondary" disabled>Generate</button></div><div id="status-content" class="empty-state">Select a company or project.</div></article>
+          <details class="panel nested-tool"><summary>Calendar events</summary><div id="calendar-events" class="item-list"></div></details>
+          <details class="panel nested-tool"><summary>Created business records</summary><div id="operational-records" class="item-list"></div></details>
+        </section>
+      </div>
     </section>
   </main>
-
   <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
   <script src="/static/dashboard.js" defer></script>
 </body>

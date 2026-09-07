@@ -166,6 +166,9 @@ function updateMetrics() {
   document.querySelector("#approval-count").textContent = state.actions.filter(a => a.status === "pending_approval").length;
   document.querySelector("#overdue-count").textContent = state.commitments.filter(c => deadlineState(c.deadline) === "overdue").length;
   document.querySelector("#document-count").textContent = state.documents.length;
+  const actionable = state.commitments.filter(c => c.status !== "completed").length;
+  const count = document.querySelector("#review-count");
+  if (count) count.textContent = `${actionable} ${actionable === 1 ? "item" : "items"}`;
 }
 
 function parseJson(value, fallback = {}) {
