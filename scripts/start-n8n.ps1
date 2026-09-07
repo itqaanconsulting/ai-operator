@@ -37,11 +37,25 @@ $listener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction Sile
     Select-Object -First 1
 if ($listener) {
     $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
-    if ($process.CommandLine -notlike "*uvicorn*main:app*") {
+    if ($process.CommandLine -like "*uvicorn*main:app*") {
+        Stop-Process -Id $listener.OwningProcess -Force
+        Write-Host "Stopped the host AI Operator so Docker can use port 8000"
+    }
+    elseif ($process.Name -eq "com.docker.backend.exe") {
+        try {
+            $existingApi = Invoke-RestMethod "http://127.0.0.1:8000/openapi.json" -TimeoutSec 5
+        }
+        catch {
+            throw "Docker owns port 8000, but the service is not a reachable AI Operator API."
+        }
+        if ($existingApi.info.title -ne "AI Commitment Operator") {
+            throw "Docker port 8000 belongs to another application; refusing to replace it."
+        }
+        Write-Host "Existing Docker AI Operator detected on port 8000"
+    }
+    else {
         throw "Port 8000 belongs to an unrelated process; refusing to stop it."
     }
-    Stop-Process -Id $listener.OwningProcess -Force
-    Write-Host "Stopped the host AI Operator so Docker can use port 8000"
 }
 
 docker compose --env-file $environmentFile -f $composeFile up -d --build
