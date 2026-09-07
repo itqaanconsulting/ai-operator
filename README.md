@@ -77,6 +77,7 @@ If Docker Desktop itself is stuck, use the full recovery script:
 
 This restarts Docker Desktop, waits for the engine, and then rebuilds the AI Operator stack. It also temporarily stops any other containers running in Docker Desktop.
 Docker Desktop opens visibly and every engine check has a timeout, so a frozen engine cannot leave the script waiting indefinitely.
+The script requests Windows administrator access when needed so it can restart the Docker system service.
 
 This Docker Compose setup keeps both web ports bound to localhost and gives n8n
 a private internal connection to the API. See `docs/n8n-local.md`.
