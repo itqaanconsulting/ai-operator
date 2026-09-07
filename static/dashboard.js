@@ -67,15 +67,14 @@ function actionLabel(type) {
   })[type] || "Review this finding";
 }
 
-function approvalLabel(type, recordType) {
+function outcomeLabel(type, recordType) {
   return ({
-    draft_reply: "Approve email draft",
-    calendar_event: "Approve calendar event",
-    record_decision: "Approve business decision",
-    schedule_follow_up: "Approve follow-up",
-    create_operational_record: `Approve ${recordType?.replaceAll("_", " ") || "business record"}`,
-    open_loop_review: "Approve open-loop review",
-  })[type] || "Approve proposed action";
+    draft_reply: "Create Gmail draft",
+    calendar_event: "Create calendar event",
+    record_decision: "Save decision to business memory",
+    schedule_follow_up: "Schedule follow-up",
+    create_operational_record: `Create ${recordType?.replaceAll("_", " ") || "business record"}`,
+  })[type] || null;
 }
 
 function renderEntities() {
@@ -106,6 +105,7 @@ function renderCommitments() {
         const decision = payload.decision_record || {};
         const followUp = payload.follow_up || {};
         const record = payload.operational_record || {};
+        const outcome = action ? outcomeLabel(action.action_type, record.record_type) : null;
         const proposalReady = action?.action_type === "calendar_event" ? Boolean(event.start_at)
           : action?.action_type === "record_decision" ? Boolean(decision.title && decision.decision)
           : action?.action_type === "schedule_follow_up" ? Boolean(followUp.follow_up_at && followUp.subject && followUp.body)
@@ -121,16 +121,11 @@ function renderCommitments() {
           ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor"><summary>Review or edit follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "create_operational_record" ? `<details class="draft-editor"><summary>Review or edit ${escapeHtml(record.record_type?.replaceAll("_", " ") || "business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save record edits — do not approve</button></div></details>` : ""}
           <div class="card-actions">
-            ${action?.status === "pending_approval" && proposalReady ? `<button class="button approve" data-approve="${action.id}">${escapeHtml(approvalLabel(action.action_type, record.record_type))}</button>` : ""}
-            ${action?.status === "pending_approval" && !proposalReady ? '<span class="pill">Complete proposal first</span>' : ""}
-            ${action?.status === "pending_approval" ? `<button class="button reject" data-reject="${action.id}">Reject proposed action</button>` : ""}
-            ${action?.status === "approved" && action.action_type === "draft_reply" ? `<button class="button execute" data-execute="${action.id}">Create Gmail draft</button>` : ""}
-            ${action?.status === "approved" && action.action_type === "calendar_event" ? `<button class="button execute" data-execute="${action.id}">Create Calendar event</button>` : ""}
-            ${action?.status === "approved" && action.action_type === "record_decision" ? `<button class="button execute" data-execute="${action.id}">Record decision</button>` : ""}
-            ${action?.status === "approved" && action.action_type === "schedule_follow_up" ? `<button class="button execute" data-execute="${action.id}">Activate follow-up</button>` : ""}
-            ${action?.status === "approved" && action.action_type === "create_operational_record" ? `<button class="button execute" data-execute="${action.id}">Create ${escapeHtml(record.record_type?.replaceAll("_", " ") || "record")}</button>` : ""}
-            ${action?.status === "approved" && !["draft_reply", "calendar_event", "record_decision", "schedule_follow_up", "create_operational_record"].includes(action.action_type) ? '<span class="pill approved">Approved · manual action</span>' : ""}
-            <details class="secondary-action-menu"><summary>More</summary><div><button class="button quiet-action" data-complete="${item.id}">Resolve without automation</button><small>Removes this finding from the inbox without creating anything.</small></div></details>
+            ${action?.status === "pending_approval" && proposalReady && outcome ? `<button class="button approve" data-approve-execute="${action.id}" data-outcome="${escapeHtml(outcome)}">${escapeHtml(outcome)}</button>` : ""}
+            ${action?.status === "pending_approval" && !proposalReady ? '<span class="missing-details">Open the editor above and complete the required details.</span>' : ""}
+            ${action?.status === "approved" && outcome ? `<button class="button execute" data-execute="${action.id}">${escapeHtml(outcome)}</button>` : ""}
+            ${!outcome ? '<span class="no-automation">No automated action is available for this finding.</span>' : ""}
+            <button class="button dismiss" data-complete="${item.id}">Dismiss — create nothing</button>
           </div>
         </article>`;
       }).join("")}
@@ -141,9 +136,8 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-complete]").forEach(button => {
     button.addEventListener("click", () => completeCommitment(button.dataset.complete));
   });
-  elements.commitments.querySelectorAll("[data-approve]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.approve, "approve")));
-  elements.commitments.querySelectorAll("[data-reject]").forEach(button => button.addEventListener("click", () => decideAction(button.dataset.reject, "reject")));
   elements.commitments.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
+  elements.commitments.querySelectorAll("[data-approve-execute]").forEach(button => button.addEventListener("click", () => approveAndExecuteAction(button.dataset.approveExecute, button.dataset.outcome)));
   elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
@@ -471,6 +465,19 @@ async function executeAction(id) {
   catch (error) { notify(error.message, true); }
 }
 
+async function approveAndExecuteAction(id, outcome) {
+  if (!window.confirm(`${outcome}?\n\nThis approves the AI proposal and performs this action.`)) return;
+  try {
+    await api(`/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note: `Approved for immediate execution in dashboard: ${outcome}` }) });
+    await api(`/actions/${id}/execute`, { method: "POST" });
+    notify(`${outcome} completed.`);
+    await refresh();
+  } catch (error) {
+    notify(`${outcome} could not be completed: ${error.message}`, true);
+    await refresh();
+  }
+}
+
 async function saveCalendarProposal(id) {
   const value = name => elements.commitments.querySelector(`[data-event-${name}="${id}"]`).value.trim();
   const attendees = value("attendees").split(",").map(item => item.trim()).filter(Boolean);
@@ -527,9 +534,10 @@ async function saveOperationalRecord(id) {
 }
 
 async function completeCommitment(id) {
+  if (!window.confirm("Dismiss this finding?\n\nIt will leave the review inbox and no proposed action will be created.")) return;
   try {
-    await api(`/commitments/${id}/complete`, { method: "POST", body: JSON.stringify({ note: "Marked complete in dashboard" }) });
-    notify("Commitment completed."); await refresh();
+    await api(`/commitments/${id}/complete`, { method: "POST", body: JSON.stringify({ note: "Dismissed without automation in dashboard" }) });
+    notify("Finding dismissed. Nothing was created."); await refresh();
   } catch (error) { notify(error.message, true); }
 }
 
