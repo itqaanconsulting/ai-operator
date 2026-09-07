@@ -91,9 +91,13 @@ function renderEntities() {
 }
 
 function renderCommitments() {
-  elements.commitments.innerHTML = state.workQueue.length ? state.workQueue.map(group => `
-    <section class="work-group">
-      <header class="work-group-header"><div><span class="source-label">EMAIL SUBJECT</span><h3 class="email-subject">${escapeHtml(group.email.subject)}</h3></div><span class="finding-count">${group.commitments.length} finding${group.commitments.length === 1 ? "" : "s"}</span></header>
+  const latestRun = state.automationRuns.find(item => item.workflow === "inbox_automation" && item.status === "completed");
+  const latestProcessed = new Set(parseJson(latestRun?.result_json).processed || []);
+  const newGroups = state.workQueue.filter(group => latestProcessed.has(group.email.gmail_msg_id));
+  const earlierGroups = state.workQueue.filter(group => !latestProcessed.has(group.email.gmail_msg_id));
+  const renderGroups = (groups, isNew) => groups.map(group => `
+    <details class="work-group" ${isNew ? "open" : ""}>
+      <summary class="work-group-header"><div><span class="source-label">EMAIL SUBJECT</span><h3 class="email-subject">${escapeHtml(group.email.subject)}</h3></div><span class="finding-count">${group.commitments.length} open finding${group.commitments.length === 1 ? "" : "s"}</span></summary>
       ${group.commitments.map((item, itemIndex) => {
         const action = group.actions.find(candidate => candidate.commitment_id === item.id && candidate.action_type !== "open_loop_review")
           || group.actions.find(candidate => candidate.commitment_id === item.id);
@@ -130,7 +134,10 @@ function renderCommitments() {
           </div>
         </article>`;
       }).join("")}
-    </section>`).join("") : '<p class="empty-state">No work needs attention.</p>';
+    </details>`).join("");
+  elements.commitments.innerHTML = state.workQueue.length ? `
+    <section class="queue-section"><div class="queue-section-heading"><h3>New from latest scan</h3><span>${newGroups.length} email${newGroups.length === 1 ? "" : "s"}</span></div>${newGroups.length ? renderGroups(newGroups, true) : '<p class="queue-empty">No new email findings in the latest scan.</p>'}</section>
+    <section class="queue-section"><div class="queue-section-heading"><h3>Earlier open work</h3><span>${earlierGroups.length} email${earlierGroups.length === 1 ? "" : "s"}</span></div>${earlierGroups.length ? renderGroups(earlierGroups, false) : '<p class="queue-empty">No earlier work is still open.</p>'}</section>` : '<p class="empty-state">No work needs attention.</p>';
   elements.commitments.querySelectorAll("[data-complete]").forEach(button => {
     button.addEventListener("click", () => completeCommitment(button.dataset.complete));
   });
@@ -191,7 +198,10 @@ function updateMetrics() {
   document.querySelector("#document-count").textContent = state.documents.length;
   const actionable = state.commitments.filter(c => c.status !== "completed").length;
   const count = document.querySelector("#review-count");
-  if (count) count.textContent = `${actionable} ${actionable === 1 ? "item" : "items"}`;
+  if (count) count.textContent = `${actionable} open finding${actionable === 1 ? "" : "s"}`;
+  document.querySelector("#open-work-count").textContent = actionable;
+  const emailCount = state.workQueue.length;
+  document.querySelector("#open-email-count").textContent = `From ${emailCount} email${emailCount === 1 ? "" : "s"}`;
 }
 
 function parseJson(value, fallback = {}) {
@@ -616,7 +626,9 @@ function renderLatestInboxRun() {
   const documentCount = (documents.review_ready?.length || 0) + (documents.analyzed_only?.length || 0);
   const errorCount = (result.errors?.length || 0) + (documents.errors?.length || 0);
   const finished = run.finished_at || run.started_at;
-  target.textContent = `n8n last checked ${finished} · ${result.processed?.length || 0} new · ${errorCount ? `${errorCount} errors` : "no errors"}`;
+  const newCount = result.processed?.length || 0;
+  document.querySelector("#last-scan-new-count").textContent = newCount;
+  target.textContent = `Last checked by n8n on ${finished}${errorCount ? ` · ${errorCount} errors` : ""}`;
 }
 
 function renderReviewQueue() {

@@ -19,8 +19,22 @@
 .card-actions { padding-top: 12px; border-top: 1px solid var(--line); }
 .button.quiet-action { min-height: 40px; padding: 9px 2px; border: 0; color: var(--muted); background: transparent; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .button.quiet-action:hover { color: var(--ink); }
+.inbox-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.inbox-summary article { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.inbox-summary article > span { min-width: 34px; font-size: 28px; font-weight: 760; line-height: 1; }
+.inbox-summary strong { font-size: 14px; }
+.inbox-summary p { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.queue-section { display: grid; gap: 10px; }
+.queue-section + .queue-section { margin-top: 10px; padding-top: 20px; border-top: 1px solid var(--line); }
+.queue-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 2px; }
+.queue-section-heading h3 { font-size: 15px; }
+.queue-section-heading span { color: var(--muted); font-size: 12px; }
+.queue-empty { padding: 16px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); background: #fafbfa; font-size: 13px; }
+.work-group > summary { list-style-position: outside; cursor: pointer; }
+.work-group > summary::marker { color: var(--primary); }
+.work-group:not([open]) .work-group-header { border-bottom: 0; }
 .secondary-action-menu { margin-left: auto; }
 .secondary-action-menu > summary { min-height: 40px; padding: 10px 4px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .secondary-action-menu > div { display: grid; max-width: 260px; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfa; }
 .secondary-action-menu small { color: var(--muted); font-size: 12px; line-height: 1.4; }
-@media (max-width: 560px) { .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
+@media (max-width: 560px) { .inbox-summary { grid-template-columns: 1fr; } .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }

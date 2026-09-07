@@ -733,7 +733,7 @@ class Database:
             emails = {}
             for email_id in email_ids:
                 row = connection.execute(
-                    """SELECT em.id, em.subject, em.sender, em.created_at,
+                    """SELECT em.id, em.gmail_msg_id, em.subject, em.sender, em.created_at,
                               GROUP_CONCAT(DISTINCT en.name) AS entity_name
                        FROM emails em
                        LEFT JOIN email_entities ee ON ee.email_id = em.id

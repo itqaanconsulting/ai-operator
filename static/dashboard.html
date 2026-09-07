@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Operator</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=0.35.0">
-  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.35.0">
-  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.35.0">
+  <link rel="stylesheet" href="/static/dashboard.css?v=0.36.0">
+  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.36.0">
+  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.36.0">
 </head>
 <body>
   <header class="topbar">
@@ -23,8 +23,12 @@
       <section class="inbox-header">
         <div><p class="section-label">Automation active</p><h2>Needs your attention</h2><p id="last-inbox-run" class="status-copy">Waiting for the first n8n inbox scan.</p></div>
       </section>
+      <section class="inbox-summary" aria-label="Inbox status">
+        <article><span id="last-scan-new-count">—</span><div><strong>New emails</strong><p>Found in the latest scan</p></div></article>
+        <article><span id="open-work-count">—</span><div><strong>Open findings</strong><p id="open-email-count">Across all scanned emails</p></div></article>
+      </section>
       <section class="review-panel">
-        <div class="review-heading"><div><h2>AI review inbox</h2><p>Each card shows one finding and the action AI recommends.</p></div><span id="review-count" class="count-badge">0 items</span></div>
+        <div class="review-heading"><div><h2>AI review inbox</h2><p>New findings are separated from work that was already open.</p></div><span id="review-count" class="count-badge">0 open findings</span></div>
         <div id="commitments" class="item-list work-list"></div>
       </section>
       <details class="more-panel">
@@ -60,6 +64,6 @@
     </section>
   </main>
   <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
-  <script src="/static/dashboard.js?v=0.35.0" defer></script>
+  <script src="/static/dashboard.js?v=0.36.0" defer></script>
 </body>
 </html>
