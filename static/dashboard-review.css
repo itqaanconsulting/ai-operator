@@ -2,18 +2,21 @@
 .work-group-header { align-items: center; padding: 18px 20px; background: #eaf3f0; border-bottom-color: #cfddd8; }
 .work-group-header > div { display: grid; gap: 5px; }
 .source-label, .finding-heading > span { color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
-.email-subject { margin: 0; font-size: 20px; line-height: 1.3; letter-spacing: -.015em; }
+.email-subject { margin: 0; font-size: 24px; font-weight: 760; line-height: 1.22; letter-spacing: -.025em; }
 .finding-count { padding: 5px 9px; border: 1px solid #c9d9d3; border-radius: 999px; color: var(--primary) !important; background: #fff; font-weight: 700; }
 .work-item { position: relative; padding: 20px 20px 20px 28px; }
 .work-item::before { content: ""; position: absolute; top: 20px; bottom: 20px; left: 16px; width: 3px; border-radius: 3px; background: #d7e7e1; }
 .finding-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 10px; }
 .finding-heading > div { display: grid; gap: 5px; }
 .finding-heading > div > span { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
-.finding-heading h4 { margin: 0; font-size: 17px; line-height: 1.35; }
+.finding-heading h4 { margin: 0; font-size: 19px; font-weight: 700; line-height: 1.3; letter-spacing: -.012em; }
 .decision-state { flex: none; padding: 5px 8px; border-radius: 6px; color: var(--primary) !important; background: var(--soft); letter-spacing: 0 !important; text-transform: none; }
 .proposed-action { margin-top: 14px; border: 1px solid #dce9e4; background: #f4f8f6; }
-.proposed-action h5 { margin: 5px 0 0; font-size: 15px; }
+.proposed-action h5 { margin: 5px 0 0; font-size: 16px; font-weight: 700; line-height: 1.35; }
+.proposed-action p { max-width: 72ch; font-size: 13px; line-height: 1.55; }
+.work-item .meta { margin-top: 11px; }
+.source-label, .finding-heading > div > span, .proposed-action > span { font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace; }
 .card-actions { padding-top: 12px; border-top: 1px solid var(--line); }
 .button.quiet-action { min-height: 40px; padding: 9px 2px; border: 0; color: var(--muted); background: transparent; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .button.quiet-action:hover { color: var(--ink); }
-@media (max-width: 560px) { .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
+@media (max-width: 560px) { .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
