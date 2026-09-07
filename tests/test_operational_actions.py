@@ -22,7 +22,7 @@ class OperationalActionTest(unittest.TestCase):
         expected = {
             "task": "task", "sales_lead": "crm_lead", "payment": "finance_review",
             "customer_issue": "support_case", "contract_review": "document_review",
-            "risk": "escalation",
+            "job_application": "candidate_review", "risk": "escalation",
         }
         for index, (kind, record_type) in enumerate(expected.items()):
             with self.subTest(kind=kind):
@@ -64,6 +64,52 @@ class OperationalActionTest(unittest.TestCase):
         self.assertEqual(records[0]["record_type"], "crm_lead")
         self.assertEqual(records[0]["entity_name"], "Carrefour")
         self.assertEqual(records[0]["owner"], "Sales")
+
+    def test_candidate_review_prepares_interview_for_review_inbox(self):
+        _, commitment_id, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application for Engineer", body="Sam applied."),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sam applied.", contact_name="Sam",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review Sam for Engineer",
+                    proposed_action="Create a candidate review.", owner="Recruiting",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+
+        prepared = main.database.prepare_candidate_review_action(record["id"], "interview")
+        next_action = next(row for row in main.database.list_rows("proposed_actions")
+                           if row["id"] == prepared["action_id"])
+        commitment = next(row for row in main.database.list_rows("commitments")
+                          if row["id"] == commitment_id)
+
+        self.assertEqual(prepared["status"], "interview_pending")
+        self.assertEqual(next_action["action_type"], "calendar_event")
+        self.assertIn('"candidate_review_id"', next_action["payload_json"])
+        self.assertEqual(commitment["status"], "open")
+
+    def test_candidate_can_remain_under_review_without_external_action(self):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application", body="Candidate applied."),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Candidate applied.",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review candidate",
+                    proposed_action="Create a candidate review.",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+
+        result = main.database.prepare_candidate_review_action(record["id"], "hold")
+
+        self.assertEqual(result["status"], "on_hold")
+        self.assertIsNone(result["action_id"])
 
 
 if __name__ == "__main__":

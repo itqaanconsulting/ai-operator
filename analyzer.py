@@ -15,12 +15,13 @@ from models import (
 SYSTEM_PROMPT = """
 You are a cautious AI executive email operator. Identify every distinct task,
 decision, meeting, follow-up, payment, contract review, sales lead, customer
-issue, or risk in the email. Never claim an action was executed. External actions
+issue, job application, or risk in the email. Never claim an action was executed. External actions
 always require human approval. Classify the overall scenario as general, sales,
-customer_service, finance, contract, meeting, approval, operations, or escalation.
+customer_service, finance, contract, meeting, approval, operations, escalation, or hr.
 Return JSON with category (information, task, meeting, decision, follow_up, other),
 scenario, summary, contact_name, company_or_project, confidence (0 to 1), and
-work_items. Each work item has kind, title, deadline (ISO-8601 or null), urgency,
+work_items. Each work item has kind, title, deadline (ISO-8601 or null), urgency
+(exactly low, medium, or high),
 proposed_action, suggested_reply, requires_approval, owner, amount, currency, and
 notes. Return an empty work_items
 array when the email is informational. Meeting items also include start_at and
@@ -28,8 +29,11 @@ end_at as ISO-8601 values, location, and attendees. Use null or an empty array
 when meeting details are unknown. For a decision item, leave suggested_reply null
 so the human can enter the final decision outcome. If communicating that decision
 also requires a reply, create a separate follow_up item with the suggested reply.
+For recruitment mail, create a job_application item. Include the candidate name,
+target role, relevant experience and skills in concise notes; set the hiring team
+or recruiter as owner when stated. Do not make a final hiring decision.
 Likewise, keep operational work (task, payment, contract_review, sales_lead,
-customer_issue, or risk) separate from a follow_up reply item.
+customer_issue, job_application, or risk) separate from a follow_up reply item.
 Do not combine unrelated work into one item.
 """
 
@@ -61,6 +65,7 @@ class EmailAnalyzer:
             "approval": "decision", "contract": "task", "finance": "task",
             "payment": "task", "sales": "task", "customer_service": "task",
             "customer service": "task", "operations": "task", "escalation": "task",
+            "hr": "task", "recruitment": "task", "recruiting": "task",
         }
         allowed_categories = {"information", "task", "meeting", "decision", "follow_up", "other"}
         data["category"] = category if category in allowed_categories else category_aliases.get(category, "other")
@@ -75,6 +80,7 @@ class EmailAnalyzer:
             ("meeting", ("meeting", "call", "appointment", "review meeting")),
             ("approval", ("approval", "approve", "decision")),
             ("operations", ("operation", "delivery", "workflow", "launch")),
+            ("hr", ("recruit", "candidate", "applicant", "application", "resume", "cv", "vacancy", "hiring")),
         )
         allowed_scenarios = {item[0] for item in scenario_keywords} | {"general"}
         if scenario_text in allowed_scenarios:
@@ -89,17 +95,32 @@ class EmailAnalyzer:
 
         allowed_kinds = {
             "task", "decision", "meeting", "follow_up", "payment", "contract_review",
-            "sales_lead", "customer_issue", "risk", "other",
+            "sales_lead", "customer_issue", "job_application", "risk", "other",
         }
         kind_aliases = {
             "approval": "decision", "contract": "contract_review", "contract review": "contract_review",
             "sales": "sales_lead", "sales lead": "sales_lead", "customer service": "customer_issue",
             "customer_service": "customer_issue", "invoice": "payment", "finance": "payment",
             "follow-up": "follow_up", "follow up": "follow_up", "escalation": "risk",
+            "candidate": "job_application", "candidate review": "job_application",
+            "application": "job_application", "applicant": "job_application",
+            "resume": "job_application", "cv": "job_application",
+        }
+        urgency_aliases = {
+            "normal": "medium", "moderate": "medium", "medium priority": "medium",
+            "urgent": "high", "critical": "high", "high priority": "high",
+            "minor": "low", "low priority": "low",
         }
         for item in data.get("work_items") or []:
             kind = str(item.get("kind") or "other").strip().casefold()
             item["kind"] = kind if kind in allowed_kinds else kind_aliases.get(kind, "other")
+            urgency = str(item.get("urgency") or "medium").strip().casefold()
+            item["urgency"] = urgency if urgency in {"low", "medium", "high"} else urgency_aliases.get(urgency, "medium")
+            if item["kind"] == "job_application":
+                item["proposed_action"] = item.get("proposed_action") or (
+                    "Create a candidate review for the hiring team before deciding on an interview."
+                )
+                item["requires_approval"] = True
         return data
 
     def analyze_document(self, filename: str, text: str) -> DocumentAnalysis:

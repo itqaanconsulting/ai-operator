@@ -3,6 +3,7 @@ const state = {
   documents: [], trustedReferences: [], comparisons: [], revisionDrafts: [],
   contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [], workQueue: [],
   operationalRecords: [],
+  focusEmailId: null,
 };
 
 const elements = {
@@ -23,6 +24,7 @@ const elements = {
   briefingButton: document.querySelector("#briefing-button"),
   operatorAnswer: document.querySelector("#operator-answer"),
   operationalRecords: document.querySelector("#operational-records"),
+  candidateReviews: document.querySelector("#candidate-reviews"),
 };
 
 async function api(path, options = {}) {
@@ -54,6 +56,12 @@ function deadlineState(deadline) {
   if (!deadline) return "No deadline";
   const date = new Date(deadline.length === 10 ? `${deadline}T23:59:59Z` : deadline);
   return date < new Date() ? "overdue" : deadline;
+}
+
+function dateTimeLocalValue(value) {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+  return match ? match[1] : "";
 }
 
 function actionLabel(type) {
@@ -95,7 +103,7 @@ function renderCommitments() {
   const newGroups = state.workQueue.filter(group => latestProcessed.has(group.email.gmail_msg_id));
   const earlierGroups = state.workQueue.filter(group => !latestProcessed.has(group.email.gmail_msg_id));
   const renderGroups = (groups, isNew) => groups.map(group => `
-    <details class="work-group" ${isNew ? "open" : ""}>
+    <details class="work-group" data-email-group="${group.email.id}" ${isNew || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}>
       <summary class="work-group-header"><div><span class="source-label">EMAIL SUBJECT</span><h3 class="email-subject">${escapeHtml(group.email.subject)}</h3></div><span class="finding-count">${group.commitments.length} open finding${group.commitments.length === 1 ? "" : "s"}</span></summary>
       ${group.commitments.map((item, itemIndex) => {
         const action = group.actions.find(candidate => candidate.commitment_id === item.id && candidate.action_type !== "open_loop_review")
@@ -116,7 +124,7 @@ function renderCommitments() {
           <div class="meta"><span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span><span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">${escapeHtml(deadlineState(item.deadline))}</span>${payload.work_item_kind ? `<span class="pill">${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}</div>
           ${action ? `<div class="proposed-action"><span>AI RECOMMENDS</span><h5>${escapeHtml(actionLabel(action.action_type))}</h5><p>${escapeHtml(action.description)}</p></div>` : ""}
           ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor"><summary>Review or edit email draft</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea><button class="button secondary" data-save-draft="${action.id}">Save draft edits — do not approve</button></div></details>` : ""}
-          ${action?.action_type === "calendar_event" ? `<details class="draft-editor" ${action.status === "failed" ? "open" : ""}><summary>${action.status === "failed" ? "Fix calendar details before retrying" : "Review or edit calendar event"}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><input data-event-start="${action.id}" value="${escapeHtml(event.start_at || "")}" placeholder="Start, e.g. 2026-09-10T14:00:00+02:00"><input data-event-end="${action.id}" value="${escapeHtml(event.end_at || "")}" placeholder="End (optional · defaults to 30 minutes)"><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save event edits — do not approve</button></div></details>` : ""}
+          ${action?.action_type === "calendar_event" ? `<details class="draft-editor" ${action.status === "failed" || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}><summary>${action.status === "failed" ? "Fix calendar details before retrying" : "Review or edit calendar event"}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label><label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save event edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "record_decision" ? `<details class="draft-editor"><summary>Review or edit business decision</summary><div class="draft-editor-body"><input data-decision-title="${action.id}" value="${escapeHtml(decision.title || item.title)}" aria-label="Decision title"><textarea data-decision-outcome="${action.id}" aria-label="Decision outcome" placeholder="Enter the final decision before approval">${escapeHtml(decision.decision || "")}</textarea><textarea data-decision-rationale="${action.id}" aria-label="Decision rationale" placeholder="Rationale (optional)">${escapeHtml(decision.rationale || "")}</textarea><button class="button secondary" data-save-decision="${action.id}">Save decision edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor"><summary>Review or edit follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "create_operational_record" ? `<details class="draft-editor"><summary>Review or edit ${escapeHtml(record.record_type?.replaceAll("_", " ") || "business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save record edits — do not approve</button></div></details>` : ""}
@@ -137,7 +145,7 @@ function renderCommitments() {
     button.addEventListener("click", () => completeCommitment(button.dataset.complete));
   });
   elements.commitments.querySelectorAll("[data-execute]").forEach(button => button.addEventListener("click", () => executeAction(button.dataset.execute)));
-  elements.commitments.querySelectorAll("[data-approve-execute]").forEach(button => button.addEventListener("click", () => approveAndExecuteAction(button.dataset.approveExecute, button.dataset.outcome)));
+  elements.commitments.querySelectorAll("[data-approve-execute]").forEach(button => button.addEventListener("click", () => approveAndExecuteAction(button.dataset.approveExecute, button.dataset.outcome, button)));
   elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
@@ -173,6 +181,47 @@ function renderOperationalRecords() {
   elements.operationalRecords.querySelectorAll("[data-send-trello]").forEach(button => {
     button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendTrello));
   });
+}
+
+function renderCandidateReviews() {
+  const candidates = state.operationalRecords.filter(record => record.record_type === "candidate_review");
+  document.querySelector("#candidate-count").textContent = `${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`;
+  elements.candidateReviews.innerHTML = candidates.length ? candidates.map(record => `
+    <article class="candidate-card">
+      <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(record.status.replaceAll("_", " "))}</span></div>
+      <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
+      <p>${escapeHtml(record.notes || record.next_action)}</p>
+      ${["open", "on_hold"].includes(record.status) ? `<div class="candidate-actions"><button class="button primary" data-candidate-action="interview" data-candidate-id="${record.id}">Prepare interview</button><button class="button secondary" data-candidate-action="reject" data-candidate-id="${record.id}">Prepare rejection email</button><button class="button quiet-action" data-candidate-action="hold" data-candidate-id="${record.id}">Keep under review</button></div>` : ""}
+      ${["interview_pending", "rejection_pending"].includes(record.status) ? '<p class="candidate-next">Next step is ready in the Review inbox.</p>' : ""}
+      ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
+      ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
+    </article>`).join("") : '<p class="empty-state">No candidate reviews yet.</p>';
+  elements.candidateReviews.querySelectorAll("[data-candidate-action]").forEach(button => button.addEventListener("click", () => prepareCandidateAction(button.dataset.candidateId, button.dataset.candidateAction, button)));
+}
+
+async function prepareCandidateAction(id, decision, button) {
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Working…";
+  try {
+    const candidate = state.operationalRecords.find(record => String(record.id) === String(id));
+    const result = await api(`/candidate-reviews/${id}/next-action`, { method: "POST", body: JSON.stringify({ decision, note: "Selected in Candidate reviews" }) });
+    if (result.action_id) {
+      state.focusEmailId = candidate?.email_id || null;
+      notify("Next step prepared. Review the details before creating anything.");
+      switchView("documents");
+    } else {
+      notify("Candidate remains under review.");
+    }
+    await refresh();
+    if (state.focusEmailId) {
+      document.querySelector(`[data-email-group="${state.focusEmailId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  } catch (error) {
+    notify(error.message, true);
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 async function sendRecordToTrello(id) {
@@ -318,7 +367,7 @@ async function refresh() {
     state.workQueue = workQueue.groups;
     state.operationalRecords = operationalRecords.records;
     if (state.selectedEntity) state.selectedEntity = state.entities.find(e => e.id === state.selectedEntity.id) || null;
-    renderEntities(); renderCommitments(); renderCalendarEvents(); renderOperationalRecords();
+    renderEntities(); renderCommitments(); renderCalendarEvents(); renderOperationalRecords(); renderCandidateReviews();
     renderDocuments(); renderTrustedReferences(); renderComparisons(); renderRevisionDrafts(); updateMetrics();
     renderSchedule();
     renderInboxSchedule();
@@ -465,8 +514,11 @@ async function executeAction(id) {
   catch (error) { notify(error.message, true); }
 }
 
-async function approveAndExecuteAction(id, outcome) {
-  if (!window.confirm(`${outcome}?\n\nThis approves the AI proposal and performs this action.`)) return;
+async function approveAndExecuteAction(id, outcome, button) {
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Working…";
+  notify(`${outcome} in progress…`);
   try {
     await api(`/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note: `Approved for immediate execution in dashboard: ${outcome}` }) });
     await api(`/actions/${id}/execute`, { method: "POST" });
@@ -475,6 +527,8 @@ async function approveAndExecuteAction(id, outcome) {
   } catch (error) {
     notify(`${outcome} could not be completed: ${error.message}`, true);
     await refresh();
+    button.disabled = false;
+    button.textContent = originalLabel;
   }
 }
 
@@ -711,8 +765,6 @@ async function executeRevisionDelivery(id) {
 function switchView(view) {
   document.querySelectorAll(".app-view").forEach(section => { section.hidden = !section.id.startsWith(view); });
   document.querySelectorAll(".view-tab").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  document.querySelector(".metrics").hidden = view !== "operations";
-  document.querySelector("#monitor-button").hidden = view !== "operations";
 }
 
 document.querySelector("#refresh-button").addEventListener("click", refresh);

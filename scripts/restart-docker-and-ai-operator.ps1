@@ -61,6 +61,13 @@ if ($stillRunning) {
     Write-Host "Some Docker processes restarted automatically; continuing with Docker Desktop startup." -ForegroundColor Yellow
 }
 
+Write-Host "Resetting the WSL network used by Docker..."
+& wsl.exe --shutdown
+if ($LASTEXITCODE -ne 0) {
+    throw "WSL could not be reset. Docker container networking may remain unavailable."
+}
+Start-Sleep -Seconds 3
+
 if ($dockerService) {
     Write-Host "Starting Docker system service..."
     Start-Service -Name "com.docker.service"

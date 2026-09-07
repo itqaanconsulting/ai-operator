@@ -15,7 +15,7 @@ automatically.
 - Records decisions in entity context and the audit log.
 - Schedules AI-detected follow-ups and creates an approval-gated draft when due.
 - Converts operational findings into editable tasks, CRM leads, finance reviews,
-  support cases, document-review tasks, and escalation records.
+  support cases, document-review tasks, candidate reviews, and escalation records.
 - Sends an approved business record to Trello through a published n8n workflow
   only after a separate human confirmation, with duplicate-card protection.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
@@ -78,6 +78,7 @@ If Docker Desktop itself is stuck, use the full recovery script:
 This restarts Docker Desktop, waits for the engine, and then rebuilds the AI Operator stack. It also temporarily stops any other containers running in Docker Desktop.
 Docker Desktop opens visibly and every engine check has a timeout, so a frozen engine cannot leave the script waiting indefinitely.
 The script requests Windows administrator access when needed so it can restart the Docker system service.
+It also resets WSL before restarting Docker, which repairs the container network after a frozen Docker engine. This temporarily stops other running WSL distributions.
 
 This Docker Compose setup keeps both web ports bound to localhost and gives n8n
 a private internal connection to the API. See `docs/n8n-local.md`.
@@ -319,7 +320,7 @@ An optional **Automatic scan** control runs the same bounded, audited inbox
 workflow on a local interval. It is disabled by default and never sends mail.
 
 AI triage recognizes multiple work scenarios: sales, customer service, finance,
-contracts, meetings, approvals, operations, and escalations. A single email may
+contracts, HR/recruitment, meetings, approvals, operations, and escalations. A single email may
 produce multiple separate work items, each with its own deadline, urgency,
 recommended action, and approval gate.
 
@@ -356,7 +357,7 @@ in the work queue. The draft still requires separate approval and is never sent
 automatically. Completing the underlying work item cancels its pending follow-up.
 
 Other AI findings use the same compact approval flow. The operator maps tasks,
-sales leads, payments, customer issues, contract reviews, and risks to structured
+sales leads, payments, customer issues, contract reviews, job applications, and risks to structured
 internal business records. Title, owner, due date, priority, next action, notes,
 and optional amount/currency remain editable before approval. These local records
 are deliberately connector-neutral: a later adapter can synchronize them with

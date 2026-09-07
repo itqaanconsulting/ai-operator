@@ -33,6 +33,7 @@
 .work-group > summary { list-style-position: outside; cursor: pointer; }
 .work-group > summary::marker { color: var(--primary); }
 .work-group:not([open]) .work-group-header { border-bottom: 0; }
+.work-group[open][data-email-group] { scroll-margin-top: 20px; }
 .secondary-action-menu { margin-left: auto; }
 .secondary-action-menu > summary { min-height: 40px; padding: 10px 4px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .secondary-action-menu > div { display: grid; max-width: 260px; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfa; }
@@ -41,4 +42,24 @@
 .button.dismiss { min-height: 40px; padding: 9px 12px; border: 1px solid var(--line); color: var(--muted); background: #fff; }
 .button.dismiss:hover { color: var(--danger); border-color: #ead4d5; }
 .missing-details, .no-automation { flex: 1 1 100%; padding: 9px 11px; border-radius: 7px; color: var(--muted); background: #f5f6f5; font-size: 13px; line-height: 1.4; }
+.candidate-list { display: grid; gap: 12px; padding: 16px; }
+.candidate-card { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.candidate-card-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.candidate-card-heading > div > span { color: var(--primary); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.candidate-card-heading h3 { margin-top: 5px; font-size: 20px; }
+.candidate-card dl { display: flex; gap: 28px; margin: 16px 0; }
+.candidate-card dl div { display: grid; gap: 3px; }
+.candidate-card dt { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.candidate-card dd { margin: 0; font-size: 14px; }
+.candidate-card > p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.candidate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--line); }
+.candidate-next { margin-top: 16px; padding: 11px 12px; border-radius: 8px; background: #f5f6f5; }
+.candidate-next.success { color: var(--primary); background: var(--soft); }
+.date-time-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.date-time-field input { width: 100%; color: var(--ink); font: inherit; font-weight: 400; }
+.business-memory { margin-top: 4px; }
+.memory-body { padding: 18px; gap: 14px; }
+.memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.memory-heading h2 { font-size: 17px; }
+.memory-heading p { margin-top: 3px; color: var(--muted); font-size: 13px; }
 @media (max-width: 560px) { .inbox-summary { grid-template-columns: 1fr; } .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }

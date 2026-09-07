@@ -371,6 +371,69 @@ class Database:
             )
             self._backfill_entities(connection)
             self._backfill_calendar_proposals(connection)
+            self._backfill_candidate_review_actions(connection)
+            self._backfill_executed_commitments(connection)
+
+    @staticmethod
+    def _backfill_executed_commitments(connection):
+        connection.execute(
+            """UPDATE commitments
+               SET status = 'completed', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+               WHERE status = 'open' AND EXISTS (
+                   SELECT 1 FROM proposed_actions a
+                   WHERE a.commitment_id = commitments.id
+                     AND a.status = 'executed'
+                     AND a.action_type != 'schedule_follow_up'
+               )"""
+        )
+
+    @staticmethod
+    def _backfill_candidate_review_actions(connection):
+        rows = connection.execute(
+            """SELECT e.id AS email_id, e.analysis_json, c.id AS commitment_id, c.title,
+                      c.deadline, c.urgency
+               FROM emails e JOIN commitments c ON c.email_id = e.id
+               WHERE e.analysis_json IS NOT NULL AND c.status = 'open'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM proposed_actions a WHERE a.commitment_id = c.id
+                 )"""
+        ).fetchall()
+        for row in rows:
+            try:
+                analysis = json.loads(row["analysis_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            item = next((candidate for candidate in analysis.get("work_items", [])
+                         if candidate.get("kind") == "job_application"
+                         and candidate.get("title") == row["title"]), None)
+            if not item:
+                continue
+            proposed_action = item.get("proposed_action") or (
+                "Create a candidate review for the hiring team before deciding on an interview."
+            )
+            payload = {
+                "suggested_reply": None,
+                "scenario": "hr",
+                "work_item_kind": "job_application",
+                "operational_record": {
+                    "record_type": "candidate_review",
+                    "title": row["title"],
+                    "owner": item.get("owner") or "Recruiting",
+                    "due_at": row["deadline"],
+                    "priority": row["urgency"],
+                    "next_action": proposed_action,
+                    "notes": item.get("notes") or analysis.get("summary"),
+                    "amount": None,
+                    "currency": None,
+                },
+            }
+            connection.execute(
+                """INSERT INTO proposed_actions
+                   (commitment_id, email_id, action_type, description, payload_json, status)
+                   VALUES (?, ?, 'create_operational_record', ?, ?, ?)""",
+                (row["commitment_id"], row["email_id"], proposed_action,
+                 json.dumps(payload), ActionStatus.PENDING_APPROVAL.value),
+            )
 
     @staticmethod
     def _backfill_calendar_proposals(connection):
@@ -495,7 +558,8 @@ class Database:
                     record_types = {
                         "task": "task", "sales_lead": "crm_lead",
                         "payment": "finance_review", "customer_issue": "support_case",
-                        "contract_review": "document_review", "risk": "escalation",
+                        "contract_review": "document_review", "job_application": "candidate_review",
+                        "risk": "escalation",
                     }
                     action_type = (
                         "calendar_event" if item.kind == "meeting"
@@ -878,6 +942,93 @@ class Database:
                    WHERE r.id = ?""", (record_id,),
             ).fetchone()
             return dict(row) if row else None
+
+    def prepare_candidate_review_action(self, record_id: int, decision: str,
+                                        note: str | None = None):
+        with self.connect() as connection:
+            record = connection.execute(
+                """SELECT r.*, em.subject AS source_subject, em.analysis_json
+                   FROM operational_records r JOIN emails em ON em.id = r.email_id
+                   WHERE r.id = ? AND r.record_type = 'candidate_review'""",
+                (record_id,),
+            ).fetchone()
+            if not record:
+                return None
+            if decision == "hold":
+                connection.execute(
+                    """UPDATE operational_records SET status = 'on_hold',
+                              next_action = 'Candidate remains under human review.'
+                       WHERE id = ?""", (record_id,),
+                )
+                connection.execute(
+                    """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                       VALUES ('candidate_review', ?, 'kept_under_review', ?)""",
+                    (record_id, json.dumps({"note": note})),
+                )
+                return {"record_id": record_id, "status": "on_hold", "action_id": None}
+
+            if decision not in {"interview", "reject"}:
+                raise ValueError("Unsupported candidate review decision")
+            active = connection.execute(
+                """SELECT id FROM proposed_actions WHERE commitment_id = ?
+                   AND status IN ('pending_approval', 'approved', 'executing')
+                   ORDER BY id DESC LIMIT 1""", (record["commitment_id"],),
+            ).fetchone()
+            if active:
+                raise ValueError("A candidate follow-up is already waiting in the Review inbox")
+
+            analysis = json.loads(record["analysis_json"] or "{}")
+            candidate_name = analysis.get("contact_name") or record["title"]
+            if decision == "interview":
+                action_type = "calendar_event"
+                description = f"Prepare an interview with {candidate_name}."
+                payload = {
+                    "scenario": "hr", "work_item_kind": "meeting",
+                    "candidate_review_id": record_id,
+                    "calendar_event": {
+                        "title": f"Interview — {candidate_name}", "start_at": None,
+                        "end_at": None, "location": None, "attendees": [],
+                    },
+                }
+                record_status = "interview_pending"
+            else:
+                action_type = "draft_reply"
+                description = f"Prepare a respectful rejection email for {candidate_name}."
+                payload = {
+                    "scenario": "hr", "work_item_kind": "follow_up",
+                    "candidate_review_id": record_id,
+                    "draft_subject": f"Re: {record['source_subject']}",
+                    "suggested_reply": (
+                        f"Hi {candidate_name},\n\nThank you for your application and your interest in the role. "
+                        "After careful review, we will not be moving forward with your application at this time.\n\n"
+                        "We appreciate the time you invested and wish you every success.\n\nKind regards,\nHiring Team"
+                    ),
+                }
+                record_status = "rejection_pending"
+
+            connection.execute(
+                "UPDATE commitments SET status = 'open', completed_at = NULL WHERE id = ?",
+                (record["commitment_id"],),
+            )
+            cursor = connection.execute(
+                """INSERT INTO proposed_actions
+                   (commitment_id, email_id, action_type, description, payload_json, status)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (record["commitment_id"], record["email_id"], action_type, description,
+                 json.dumps(payload), ActionStatus.PENDING_APPROVAL.value),
+            )
+            connection.execute(
+                "UPDATE operational_records SET status = ?, next_action = ? WHERE id = ?",
+                (record_status, description, record_id),
+            )
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('candidate_review', ?, 'next_action_prepared', ?)""",
+                (record_id, json.dumps({"decision": decision, "action_id": cursor.lastrowid,
+                                        "note": note})),
+            )
+            return {"record_id": record_id, "status": record_status,
+                    "action_id": cursor.lastrowid}
 
     def claim_integration_dispatch(self, record_id: int, integration: str):
         with self.connect() as connection:
@@ -1555,7 +1706,8 @@ class Database:
     def finish_action(self, action_id: int, external_result: dict):
         with self.connect() as connection:
             current = connection.execute(
-                "SELECT payload_json FROM proposed_actions WHERE id = ? AND status = ?",
+                """SELECT payload_json, commitment_id, action_type
+                   FROM proposed_actions WHERE id = ? AND status = ?""",
                 (action_id, ActionStatus.EXECUTING.value),
             ).fetchone()
             if current is None:
@@ -1577,6 +1729,23 @@ class Database:
                    VALUES ('action', ?, 'executed', ?)""",
                 (action_id, json.dumps(external_result)),
             )
+            if current["commitment_id"] and current["action_type"] != "schedule_follow_up":
+                connection.execute(
+                    """UPDATE commitments SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+                       WHERE id = ? AND status = 'open'""",
+                    (current["commitment_id"],),
+                )
+            candidate_review_id = payload.get("candidate_review_id")
+            if candidate_review_id:
+                candidate_status = (
+                    "interview_scheduled" if current["action_type"] == "calendar_event"
+                    else "rejection_drafted" if current["action_type"] == "draft_reply"
+                    else "completed"
+                )
+                connection.execute(
+                    "UPDATE operational_records SET status = ? WHERE id = ? AND record_type = 'candidate_review'",
+                    (candidate_status, candidate_review_id),
+                )
             return dict(connection.execute(
                 "SELECT * FROM proposed_actions WHERE id = ?", (action_id,)
             ).fetchone())

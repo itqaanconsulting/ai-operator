@@ -37,7 +37,7 @@ class EmailRequest(BaseModel):
 
 
 class EmailWorkItem(BaseModel):
-    kind: Literal["task", "decision", "meeting", "follow_up", "payment", "contract_review", "sales_lead", "customer_issue", "risk", "other"]
+    kind: Literal["task", "decision", "meeting", "follow_up", "payment", "contract_review", "sales_lead", "customer_issue", "job_application", "risk", "other"]
     title: str = Field(min_length=1, max_length=500)
     deadline: str | None = None
     urgency: Literal["low", "medium", "high"] = "medium"
@@ -68,7 +68,7 @@ class EmailAnalysis(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
     scenario: Literal[
         "general", "sales", "customer_service", "finance", "contract",
-        "meeting", "approval", "operations", "escalation",
+        "meeting", "approval", "operations", "escalation", "hr",
     ] = "general"
     work_items: list[EmailWorkItem] = Field(default_factory=list, max_length=20)
 
@@ -135,7 +135,7 @@ class FollowUpProposalUpdateRequest(BaseModel):
 
 
 class OperationalRecordProposal(BaseModel):
-    record_type: Literal["task", "crm_lead", "finance_review", "support_case", "document_review", "escalation"]
+    record_type: Literal["task", "crm_lead", "finance_review", "support_case", "document_review", "candidate_review", "escalation"]
     title: str = Field(min_length=1, max_length=500)
     owner: str | None = Field(default=None, max_length=300)
     due_at: str | None = Field(default=None, max_length=50)
@@ -144,6 +144,11 @@ class OperationalRecordProposal(BaseModel):
     notes: str | None = Field(default=None, max_length=5000)
     amount: float | None = None
     currency: str | None = Field(default=None, max_length=10)
+
+
+class CandidateReviewDecisionRequest(BaseModel):
+    decision: Literal["interview", "reject", "hold"]
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class GmailImportRequest(BaseModel):

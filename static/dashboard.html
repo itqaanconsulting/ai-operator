@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Operator</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=0.37.0">
-  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.37.0">
-  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.37.0">
+  <link rel="stylesheet" href="/static/dashboard.css?v=0.38.6">
+  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.38.6">
+  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.38.6">
 </head>
 <body>
   <header class="topbar">
@@ -15,7 +15,7 @@
   </header>
   <nav class="view-tabs" aria-label="Operator workspace">
     <button class="view-tab active" data-view="documents">Review inbox</button>
-    <button class="view-tab" data-view="operations">Business context</button>
+    <button class="view-tab" data-view="cases">Cases</button>
   </nav>
   <main>
     <div id="notification" class="notification" role="status" hidden></div>
@@ -48,11 +48,19 @@
         </div>
       </details>
     </section>
-    <section id="operations-view" class="app-view context-view" hidden>
-      <header class="page-heading"><div><p class="section-label">Business memory</p><h2>Company &amp; project context</h2><p>Ask a question or open an entity to see what the operator knows.</p></div><button id="monitor-button" class="button secondary">Check open loops</button></header>
-      <details class="ask-operator" open><summary>Ask the operator</summary><div class="ask-body"><form id="operator-question-form"><input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="What is the status of Carrefour?" required><button class="button primary" type="submit">Ask</button></form><div id="operator-answer" hidden></div></div></details>
-      <section class="metrics" aria-label="Operator summary"><article><span id="entity-count">—</span><p>Entities</p></article><article><span id="commitment-count">—</span><p>Open items</p></article><article><span id="approval-count">—</span><p>Approvals</p></article><article><span id="overdue-count">—</span><p>Overdue</p></article><article><span id="document-count">—</span><p>Documents</p></article></section>
-      <div class="context-grid">
+    <section id="cases-view" class="app-view candidates-view" hidden>
+      <header class="page-heading"><div><p class="section-label">Work in progress</p><h2>Cases</h2><p>Choose what should happen next.</p></div></header>
+      <section class="review-panel">
+        <div class="review-heading"><div><h2>Candidate reviews</h2><p>Applications prepared by AI.</p></div><span id="candidate-count" class="count-badge">0 candidates</span></div>
+        <div id="candidate-reviews" class="candidate-list"></div>
+      </section>
+      <details class="more-panel business-memory">
+        <summary>Advanced business memory</summary>
+        <div class="more-panel-body memory-body">
+          <div class="memory-heading"><div><h2>Companies, projects &amp; history</h2><p>Optional tools for questions, briefings and stored records.</p></div><button id="monitor-button" class="button secondary">Check open loops</button></div>
+          <details class="ask-operator"><summary>Ask about a company or project</summary><div class="ask-body"><form id="operator-question-form"><input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="What is the status of Carrefour?" required><button class="button primary" type="submit">Ask</button></form><div id="operator-answer" hidden></div></div></details>
+          <section class="metrics" aria-label="Operator summary"><article><span id="entity-count">—</span><p>Entities</p></article><article><span id="commitment-count">—</span><p>Open items</p></article><article><span id="approval-count">—</span><p>Approvals</p></article><article><span id="overdue-count">—</span><p>Overdue</p></article><article><span id="document-count">—</span><p>Documents</p></article></section>
+          <div class="context-grid">
         <aside class="panel entity-panel"><div class="panel-heading"><h2>Companies &amp; projects</h2></div><div id="entities" class="entity-list"></div></aside>
         <section class="main-column">
           <article class="panel"><div class="panel-heading status-heading"><div><h2>Executive briefing</h2><p>Combined priorities across all systems.</p></div><button id="briefing-button" class="button secondary">Generate</button></div><div id="briefing-content" class="empty-state">Generate a briefing from current operator records.</div></article>
@@ -60,10 +68,12 @@
           <details class="panel nested-tool"><summary>Calendar events</summary><div id="calendar-events" class="item-list"></div></details>
           <details class="panel nested-tool"><summary>Created business records</summary><div id="operational-records" class="item-list"></div></details>
         </section>
-      </div>
+          </div>
+        </div>
+      </details>
     </section>
   </main>
   <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
-  <script src="/static/dashboard.js?v=0.37.0" defer></script>
+  <script src="/static/dashboard.js?v=0.38.6" defer></script>
 </body>
 </html>

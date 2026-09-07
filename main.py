@@ -52,6 +52,7 @@ from models import (
     DecisionProposalUpdateRequest,
     FollowUpProposalUpdateRequest,
     OperationalRecordProposal,
+    CandidateReviewDecisionRequest,
 )
 from open_loops import OpenLoopMonitor
 from follow_ups import FollowUpMonitor, normalize_follow_up_time
@@ -59,7 +60,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.37.1")
+app = FastAPI(title="AI Commitment Operator", version="0.38.7-dev")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -827,6 +828,19 @@ def list_entities():
 @app.get("/operational-records")
 def list_operational_records(status: str | None = Query(default=None)):
     return {"records": database.list_operational_records(status)}
+
+
+@app.post("/candidate-reviews/{record_id}/next-action")
+def prepare_candidate_review_next_action(record_id: int, request: CandidateReviewDecisionRequest):
+    try:
+        result = database.prepare_candidate_review_action(
+            record_id, request.decision, request.note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Candidate review was not found")
+    return result
 
 
 def _n8n_trello_config():

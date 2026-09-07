@@ -121,13 +121,36 @@ Alex
 Expected: multiple scenarios/work items: contract review, approval, finance,
 follow-up draft, and meeting. Every external action must require approval.
 
+## 7. HR candidate review
+
+**Subject:** Application for Automation Engineer — Sam de Vries
+
+```text
+Hi Hiring Team,
+
+I would like to apply for the Automation Engineer role. I have five years of
+Python experience and three years building n8n and API-based workflows. I have
+also worked with Gmail, Google Calendar, Trello, and CRM integrations.
+
+Please create a candidate review for the Recruiting team. The next step is to
+review my experience against the role before deciding whether to schedule an
+interview. Do not send a reply or schedule an interview automatically.
+
+Kind regards,
+Sam de Vries
+sam.devries@example.com
+```
+
+Expected: `hr`; one `job_application` finding and an approval-gated candidate
+review owned by Recruiting. No reply or interview is created automatically.
+
 ## Quick test procedure
 
 1. Send one example to your own Gmail address.
 2. Add the label `AI-Operator` to the received message.
-3. Open `http://127.0.0.1:8000/dashboard`.
-4. Click **Scan Gmail**.
-5. Check **AI findings** for separate tasks and deadlines.
-6. Check **Review and create draft** for approval-gated actions.
-7. Approve only a safe test reply, then click **Create Gmail draft**.
-8. Confirm that Gmail contains a draft and that no email was sent.
+3. Wait for the published n8n inbox workflow, or run that workflow once in n8n.
+4. Open `http://127.0.0.1:8000/dashboard`.
+5. Check **New from latest scan** for separate findings and deadlines.
+6. Open the email group and review the proposed outcome.
+7. Run only a safe test action after checking its editable details.
+8. Confirm the expected record or draft exists and that no email was sent.

@@ -68,6 +68,28 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(queue[0]["email"]["subject"], "Invoice")
         self.assertEqual(len(queue[0]["commitments"]), 2)
 
+    def test_init_backfills_candidate_review_when_model_omitted_action(self):
+        _, commitment_id, action_id = self.db.save_analysis(
+            EmailRequest(subject="Application", body="CV attached"),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sam applied.",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review Sam",
+                    proposed_action=None, requires_approval=False,
+                    owner="Recruiting", notes="Python experience.",
+                )],
+            ),
+        )
+        self.assertIsNone(action_id)
+
+        self.db.init()
+
+        action = next(row for row in self.db.list_rows("proposed_actions")
+                      if row["commitment_id"] == commitment_id)
+        self.assertEqual(action["action_type"], "create_operational_record")
+        self.assertEqual(action["status"], "pending_approval")
+        self.assertIn('"record_type": "candidate_review"', action["payload_json"])
+
     def test_meeting_work_item_creates_calendar_proposal_action(self):
         analysis = EmailAnalysis(
             category="meeting", scenario="meeting", summary="Meeting requested.",
@@ -177,6 +199,9 @@ class DatabaseTest(unittest.TestCase):
         self.assertIsNone(duplicate)
         self.assertEqual(finished["status"], "executed")
         self.assertIn("draft-1", finished["payload_json"])
+        commitment = next(row for row in self.db.list_rows("commitments")
+                          if row["id"] == claimed["commitment_id"])
+        self.assertEqual(commitment["status"], "completed")
 
     def test_emails_are_grouped_into_entity_context_and_timeline(self):
         first = EmailRequest(subject="Campaign", body="Please approve the campaign.")

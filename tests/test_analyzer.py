@@ -99,6 +99,20 @@ class FakeLooseLabelsCompletions:
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
+class FakeRecruitmentCompletions:
+    def create(self, **kwargs):
+        content = json.dumps({
+            "category": "recruitment", "scenario": "candidate application",
+            "summary": "Sam applied for the automation engineer vacancy.", "confidence": 0.91,
+            "work_items": [{
+                "kind": "candidate", "title": "Review Sam for Automation Engineer",
+                "urgency": "medium", "proposed_action": None, "requires_approval": False,
+                "owner": "Recruiting", "notes": "Five years of Python and workflow automation experience.",
+            }],
+        })
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
 class AnalyzerTest(unittest.TestCase):
     def test_email_analysis_recognizes_scenario_and_multiple_work_items(self):
         client = SimpleNamespace(chat=SimpleNamespace(completions=FakeAdvancedEmailCompletions()))
@@ -116,6 +130,28 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(analysis.category, "task")
         self.assertEqual(analysis.scenario, "finance")
         self.assertEqual(analysis.work_items[0].kind, "payment")
+
+    def test_email_analysis_normalizes_recruitment_scenario(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeRecruitmentCompletions()))
+        analysis = EmailAnalyzer(client=client, model="test-model").analyze(
+            __import__("models").EmailRequest(subject="Application", body="CV attached")
+        )
+        self.assertEqual(analysis.category, "task")
+        self.assertEqual(analysis.scenario, "hr")
+        self.assertEqual(analysis.work_items[0].kind, "job_application")
+        self.assertTrue(analysis.work_items[0].requires_approval)
+        self.assertIn("candidate review", analysis.work_items[0].proposed_action)
+
+    def test_email_analysis_normalizes_model_urgency_variants(self):
+        data = {
+            "category": "task", "scenario": "hr", "summary": "Candidate applied.",
+            "confidence": 0.8,
+            "work_items": [{"kind": "job_application", "title": "Review candidate", "urgency": "normal"}],
+        }
+
+        normalized = EmailAnalyzer._normalize_email_analysis(data)
+
+        self.assertEqual(normalized["work_items"][0]["urgency"], "medium")
 
     def test_status_brief_is_validated_as_structured_output(self):
         analyzer = EmailAnalyzer(client=FakeClient(), model="test-model")
