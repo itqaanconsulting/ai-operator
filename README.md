@@ -5,6 +5,10 @@ emails, identifies commitments and deadlines, proposes next actions, and places
 those actions in an approval queue. It never performs external actions
 automatically.
 
+**Featured portfolio demo:** [AI recruitment automation](docs/recruitment-demo.md)
+
+![AI recruitment automation with fictional demo data](docs/images/recruitment-demo-dashboard.png)
+
 ## Current pilot
 
 - Analyzes manually submitted emails with OpenAI.
@@ -16,11 +20,12 @@ automatically.
 - Schedules AI-detected follow-ups and creates an approval-gated draft when due.
 - Converts operational findings into editable tasks, CRM leads, finance reviews,
   support cases, document-review tasks, candidate reviews, and escalation records.
-- Sends an approved business record to Trello through a published n8n workflow
-  only after a separate human confirmation, with duplicate-card protection.
-- Turns Trello candidate decisions into idempotent approval work and executes an
-  approved interview as one Calendar event plus one unsent Gmail draft, then
-  writes the result back to the Trello card through n8n.
+- Sends a human-confirmed candidate record to Trello through a published n8n
+  workflow, with duplicate-card protection.
+- Treats a Trello candidate move as the hiring decision, requests only missing
+  execution details, and creates one Calendar event plus one unsent Gmail draft
+  from a single **Schedule interview** action. The result is written back to the
+  Trello card through n8n.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
 - Provides an authenticated n8n schedule entry point for proactive Gmail intake;
@@ -317,11 +322,25 @@ triggered through the API; a scheduler can invoke the same operation later.
 
 ## Operator dashboard
 
-The default dashboard follows one email-first workflow:
+The default dashboard follows one email-first workflow. For the recruitment
+demo, daily work is deliberately split by purpose rather than duplicated:
+
+```text
+Gmail intake -> AI finding -> Trello hiring decision
+-> complete scheduling details -> Calendar event + Gmail draft
+```
+
+The Trello move to `Interview`, `Rejected`, or `On hold` is the business
+decision. The dashboard does not ask for that decision again. It only collects
+the details required to finish the chosen action. See the complete
+[recruitment demo](docs/recruitment-demo.md).
+
+For other email scenarios, the dashboard follows this general workflow:
 
 1. Add the Gmail label `AI-Operator` to relevant messages.
-2. Click **Scan Gmail**. One audited automation run extracts tasks, deadlines,
-   and proposed actions, then checks existing open loops for follow-up.
+2. Let the published n8n schedule run, or start it manually. One audited
+   automation run extracts tasks, deadlines, and proposed actions, then checks
+   existing open loops for follow-up.
 3. Review the findings and approve or reject each proposed action.
 4. Execute an approved action: create a Gmail draft, create a Calendar event, or
    record an internal business decision. Nothing is sent automatically.
@@ -564,6 +583,8 @@ a public repository or log.
 
 ## Next steps
 
-1. Mark one reviewed contract as a trusted reference.
-2. Import a labeled Gmail contract and compare it with that reference.
-3. Show page and clause citations for every material difference.
+1. Add grounded CV attachment extraction to the recruitment demo.
+2. Replace Trello polling with a signed webhook.
+3. Add job-specific, human-defined candidate review criteria.
+4. Continue the contract pilot with trusted references and material-difference
+   evidence.

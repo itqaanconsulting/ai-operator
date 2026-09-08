@@ -119,11 +119,16 @@ The resulting flow is:
 
 ```text
 Gmail application -> AI review -> Trello AI Inbox
-Trello Interview -> n8n -> one dashboard approval
-approval -> Google Calendar event + Gmail draft -> Trello result comment
+Trello Interview -> n8n -> complete missing scheduling details
+Schedule interview -> Google Calendar event + Gmail draft -> Trello result comment
 ```
 
 Moving a card to `Rejected` prepares an editable Gmail rejection draft. Moving
 it to `On hold` records the status without creating an external action. The
 operator never sends email automatically, and Calendar attendee notifications
 remain disabled; the recruiter retains the final send decision.
+
+The Trello move is the hiring decision. The dashboard does not repeat that
+decision: it presents one **Schedule interview** action after the recruiter has
+completed the date, time, and message details. See
+[`docs/recruitment-demo.md`](recruitment-demo.md) for the end-to-end demo.
