@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+from email.utils import parseaddr
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -789,11 +790,22 @@ class Database:
             return [dict(row) for row in rows]
 
     def list_work_queue(self):
-        commitments = self.list_rows("commitments", "open")
-        open_commitment_ids = {row["id"] for row in commitments}
+        all_commitments = self.list_rows("commitments")
         actions = [row for row in self.list_rows("proposed_actions")
-                   if row["status"] in {"pending_approval", "approved"}
-                   and row.get("commitment_id") in open_commitment_ids]
+                   if row["status"] in {"pending_approval", "approved"}]
+        actionable_commitment_ids = {
+            row["commitment_id"] for row in actions if row.get("commitment_id")
+        }
+        # A new integration decision can reopen work after the original inbox item
+        # was completed. Never hide an active approval merely because that older
+        # commitment still carries a completed status.
+        commitments = [
+            row for row in all_commitments
+            if row["status"] == "open" or row["id"] in actionable_commitment_ids
+        ]
+        visible_commitment_ids = {row["id"] for row in commitments}
+        actions = [row for row in actions
+                   if row.get("commitment_id") in visible_commitment_ids]
         email_ids = sorted({row["email_id"] for row in commitments if row.get("email_id")})
         with self.connect() as connection:
             emails = {}
@@ -943,18 +955,71 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_candidate_review_by_trello_card(self, card_id: str):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT r.* FROM operational_records r
+                   JOIN integration_dispatches d ON d.operational_record_id = r.id
+                   WHERE d.integration = 'trello' AND d.external_id = ?
+                     AND r.record_type = 'candidate_review'""", (card_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_candidate_trello_dispatch(self, record_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT * FROM integration_dispatches
+                   WHERE operational_record_id = ? AND integration = 'trello'
+                     AND status = 'completed'""", (record_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def record_candidate_trello_sync(self, record_id: int, event: str, details: dict):
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('candidate_review', ?, ?, ?)""",
+                (record_id, event, json.dumps(details)),
+            )
+
+    def record_candidate_trello_transition(self, record_id: int, card_id: str,
+                                           list_name: str, event_id: str | None,
+                                           result: dict):
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('candidate_review', ?, 'trello_status_received', ?)""",
+                (record_id, json.dumps({"card_id": card_id, "list_name": list_name,
+                                        "event_id": event_id, **result})),
+            )
+
     def prepare_candidate_review_action(self, record_id: int, decision: str,
                                         note: str | None = None):
         with self.connect() as connection:
             record = connection.execute(
-                """SELECT r.*, em.subject AS source_subject, em.analysis_json
+                """SELECT r.*, em.subject AS source_subject, em.sender, em.analysis_json
                    FROM operational_records r JOIN emails em ON em.id = r.email_id
                    WHERE r.id = ? AND r.record_type = 'candidate_review'""",
                 (record_id,),
             ).fetchone()
             if not record:
                 return None
+            settled_statuses = {
+                "interview": {"interview_scheduled"},
+                "reject": {"rejection_drafted"},
+                "hold": {"on_hold"},
+            }
+            if record["status"] in settled_statuses.get(decision, set()):
+                return {"record_id": record_id, "status": record["status"],
+                        "action_id": None, "duplicate": True}
             if decision == "hold":
+                connection.execute(
+                    """UPDATE proposed_actions SET status = 'rejected',
+                              decision_note = 'Superseded by Trello: On hold',
+                              decided_at = CURRENT_TIMESTAMP
+                       WHERE commitment_id = ? AND status = 'pending_approval'""",
+                    (record["commitment_id"],),
+                )
                 connection.execute(
                     """UPDATE operational_records SET status = 'on_hold',
                               next_action = 'Candidate remains under human review.'
@@ -965,30 +1030,52 @@ class Database:
                        VALUES ('candidate_review', ?, 'kept_under_review', ?)""",
                     (record_id, json.dumps({"note": note})),
                 )
-                return {"record_id": record_id, "status": "on_hold", "action_id": None}
+                return {"record_id": record_id, "status": "on_hold", "action_id": None,
+                        "duplicate": False}
 
             if decision not in {"interview", "reject"}:
                 raise ValueError("Unsupported candidate review decision")
+            desired_action_type = (
+                "candidate_interview_package" if decision == "interview" else "draft_reply"
+            )
             active = connection.execute(
-                """SELECT id FROM proposed_actions WHERE commitment_id = ?
+                """SELECT id, action_type, status FROM proposed_actions WHERE commitment_id = ?
                    AND status IN ('pending_approval', 'approved', 'executing')
                    ORDER BY id DESC LIMIT 1""", (record["commitment_id"],),
             ).fetchone()
             if active:
-                raise ValueError("A candidate follow-up is already waiting in the Review inbox")
+                if active["action_type"] == desired_action_type:
+                    return {"record_id": record_id, "status": record["status"],
+                            "action_id": active["id"], "duplicate": True}
+                if active["status"] != ActionStatus.PENDING_APPROVAL.value:
+                    raise ValueError("An approved candidate action is already being processed")
+                connection.execute(
+                    """UPDATE proposed_actions SET status = 'rejected',
+                              decision_note = ?, decided_at = CURRENT_TIMESTAMP
+                       WHERE id = ? AND status = 'pending_approval'""",
+                    (f"Superseded by Trello decision: {decision}", active["id"]),
+                )
 
             analysis = json.loads(record["analysis_json"] or "{}")
             candidate_name = analysis.get("contact_name") or record["title"]
             if decision == "interview":
-                action_type = "calendar_event"
-                description = f"Prepare an interview with {candidate_name}."
+                action_type = "candidate_interview_package"
+                description = f"Review the interview appointment and invitation for {candidate_name}."
+                candidate_email = parseaddr(record["sender"] or "")[1]
                 payload = {
                     "scenario": "hr", "work_item_kind": "meeting",
                     "candidate_review_id": record_id,
                     "calendar_event": {
                         "title": f"Interview — {candidate_name}", "start_at": None,
-                        "end_at": None, "location": None, "attendees": [],
+                        "end_at": None, "location": None,
+                        "attendees": [candidate_email] if candidate_email else [],
                     },
+                    "draft_subject": f"Interview invitation — {record['title']}",
+                    "suggested_reply": (
+                        f"Hi {candidate_name},\n\nThank you for your application. We would like to invite "
+                        "you to an interview. Please find the proposed date and time in the calendar "
+                        "invitation.\n\nKind regards,\nHiring Team"
+                    ),
                 }
                 record_status = "interview_pending"
             else:
@@ -1028,7 +1115,7 @@ class Database:
                                         "note": note})),
             )
             return {"record_id": record_id, "status": record_status,
-                    "action_id": cursor.lastrowid}
+                    "action_id": cursor.lastrowid, "duplicate": False}
 
     def claim_integration_dispatch(self, record_id: int, integration: str):
         with self.connect() as connection:
@@ -1738,7 +1825,7 @@ class Database:
             candidate_review_id = payload.get("candidate_review_id")
             if candidate_review_id:
                 candidate_status = (
-                    "interview_scheduled" if current["action_type"] == "calendar_event"
+                    "interview_scheduled" if current["action_type"] in {"calendar_event", "candidate_interview_package"}
                     else "rejection_drafted" if current["action_type"] == "draft_reply"
                     else "completed"
                 )

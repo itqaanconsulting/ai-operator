@@ -22,7 +22,7 @@
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "{\"label\":\"AI-Operator\",\"max_results\":10}",
+        "body": "{\"label\":\"AI-Operator\",\"max_results\":50}",
         "options": {"timeout": 120000}
       },
       "id": "db084bb8-418a-46f6-bd1c-4cfaf8b0c1ae",

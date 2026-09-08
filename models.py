@@ -151,6 +151,18 @@ class CandidateReviewDecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class TrelloCandidateStatusRequest(BaseModel):
+    card_id: str = Field(min_length=1, max_length=200)
+    list_name: str = Field(min_length=1, max_length=200)
+    event_id: str | None = Field(default=None, max_length=300)
+
+
+class CandidateInterviewPackageUpdateRequest(BaseModel):
+    calendar_event: CalendarEventProposalUpdateRequest
+    email_subject: str = Field(min_length=1, max_length=500)
+    email_body: str = Field(min_length=1, max_length=20_000)
+
+
 class GmailImportRequest(BaseModel):
     label: str = Field(default="AI-Operator", min_length=1, max_length=100)
     max_results: int = Field(default=10, ge=1, le=50)

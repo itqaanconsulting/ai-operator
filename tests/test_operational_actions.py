@@ -4,7 +4,11 @@ from pathlib import Path
 
 import main
 from database import Database
-from models import DecisionRequest, EmailAnalysis, EmailRequest, EmailWorkItem
+from models import (
+    ActionStatus, CalendarEventProposalUpdateRequest, CandidateInterviewPackageUpdateRequest,
+    DecisionRequest, EmailAnalysis, EmailRequest, EmailWorkItem,
+)
+from unittest.mock import patch
 
 
 class OperationalActionTest(unittest.TestCase):
@@ -87,8 +91,10 @@ class OperationalActionTest(unittest.TestCase):
                           if row["id"] == commitment_id)
 
         self.assertEqual(prepared["status"], "interview_pending")
-        self.assertEqual(next_action["action_type"], "calendar_event")
+        self.assertEqual(next_action["action_type"], "candidate_interview_package")
         self.assertIn('"candidate_review_id"', next_action["payload_json"])
+        self.assertIn('"suggested_reply"', next_action["payload_json"])
+        self.assertIn('"attendees": [', next_action["payload_json"])
         self.assertEqual(commitment["status"], "open")
 
     def test_candidate_can_remain_under_review_without_external_action(self):
@@ -110,6 +116,70 @@ class OperationalActionTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "on_hold")
         self.assertIsNone(result["action_id"])
+
+    def test_trello_recreates_missing_interview_approval_for_pending_candidate(self):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application", body="Candidate applied."),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Candidate applied.",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review candidate",
+                    proposed_action="Create a candidate review.",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        first = main.database.prepare_candidate_review_action(record["id"], "interview")
+        main.database.decide_action(first["action_id"], ActionStatus.REJECTED, "Old action closed")
+
+        retried = main.database.prepare_candidate_review_action(record["id"], "interview")
+
+        self.assertFalse(retried["duplicate"])
+        self.assertNotEqual(retried["action_id"], first["action_id"])
+        self.assertEqual(retried["status"], "interview_pending")
+
+    @patch("main.CalendarOperator.create_event")
+    @patch("main.GmailOperator.create_reply_draft")
+    @patch("main.get_calendar_service")
+    @patch("main.get_gmail_service")
+    def test_candidate_interview_package_creates_calendar_and_gmail_draft(
+        self, gmail_service, calendar_service, create_draft, create_event
+    ):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application", body="Sam applied.", gmail_msg_id="gmail-1"),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sam applied.", contact_name="Sam",
+                work_items=[EmailWorkItem(kind="job_application", title="Review Sam",
+                                          proposed_action="Create candidate review.")],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "interview")
+        main.update_candidate_interview_package(
+            prepared["action_id"],
+            CandidateInterviewPackageUpdateRequest(
+                calendar_event=CalendarEventProposalUpdateRequest(
+                    title="Interview with Sam", start_at="2030-09-18T10:00:00+02:00",
+                    end_at="2030-09-18T10:30:00+02:00", attendees=["sam@example.com"],
+                ),
+                email_subject="Interview invitation", email_body="Hi Sam, we invite you.",
+            ),
+        )
+        create_draft.return_value = {"provider": "gmail", "draft_id": "draft-1"}
+        create_event.return_value = {"provider": "google_calendar", "event_id": "event-1"}
+
+        main.approve_action(prepared["action_id"], DecisionRequest(note="Approved"))
+        finished = main.execute_action(prepared["action_id"])
+
+        self.assertEqual(finished["status"], "executed")
+        create_draft.assert_called_once()
+        create_event.assert_called_once()
+        updated = main.database.get_operational_record(record["id"])
+        self.assertEqual(updated["status"], "interview_scheduled")
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Operator</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=0.38.6">
-  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.38.6">
-  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.38.6">
+  <link rel="stylesheet" href="/static/dashboard.css?v=0.39.0">
+  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.39.0">
+  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.39.0">
 </head>
 <body>
   <header class="topbar">
@@ -49,9 +49,9 @@
       </details>
     </section>
     <section id="cases-view" class="app-view candidates-view" hidden>
-      <header class="page-heading"><div><p class="section-label">Work in progress</p><h2>Cases</h2><p>Choose what should happen next.</p></div></header>
+      <header class="page-heading"><div><p class="section-label">Hiring workflow</p><h2>Candidate cases</h2><p>Send to the board, choose a Trello list, then approve the final result.</p></div></header>
       <section class="review-panel">
-        <div class="review-heading"><div><h2>Candidate reviews</h2><p>Applications prepared by AI.</p></div><span id="candidate-count" class="count-badge">0 candidates</span></div>
+        <div class="review-heading"><div><h2>Candidate pipeline</h2><p>1. Hiring board &nbsp;→&nbsp; 2. Trello decision &nbsp;→&nbsp; 3. Complete details</p></div><span id="candidate-count" class="count-badge">0 candidates</span></div>
         <div id="candidate-reviews" class="candidate-list"></div>
       </section>
       <details class="more-panel business-memory">
@@ -74,6 +74,6 @@
     </section>
   </main>
   <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
-  <script src="/static/dashboard.js?v=0.38.6" defer></script>
+  <script src="/static/dashboard.js?v=0.39.3" defer></script>
 </body>
 </html>

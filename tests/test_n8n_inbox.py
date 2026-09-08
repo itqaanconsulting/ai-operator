@@ -46,7 +46,7 @@ class N8nInboxTest(unittest.TestCase):
         self.assertEqual(result["new_work_count"], 1)
         self.assertTrue(result["requires_human_review"])
         self.assertFalse(result["external_action_taken"])
-        execute.assert_called_once_with("AI-Operator", 10, "n8n")
+        execute.assert_called_once_with("AI-Operator", 50, "n8n")
 
 
 if __name__ == "__main__":

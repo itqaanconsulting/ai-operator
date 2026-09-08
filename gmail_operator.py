@@ -149,6 +149,9 @@ class GmailOperator:
         ).execute()
         return {"provider": "gmail", "draft_id": created.get("id")}
 
+    def delete_draft(self, draft_id: str):
+        self.service.users().drafts().delete(userId="me", id=draft_id).execute()
+
 
 def action_reply_text(action: dict) -> str:
     payload = json.loads(action.get("payload_json") or "{}")

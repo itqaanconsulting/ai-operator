@@ -18,7 +18,7 @@ from document_processor import extract_document
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_subject, action_reply_text
 from inbox_automation import InboxAutomation
-from n8n_operator import N8nDispatchError, dispatch_operational_record
+from n8n_operator import N8nDispatchError, dispatch_candidate_result, dispatch_operational_record
 from models import (
     ActionStatus,
     AnalysisResult,
@@ -53,6 +53,8 @@ from models import (
     FollowUpProposalUpdateRequest,
     OperationalRecordProposal,
     CandidateReviewDecisionRequest,
+    CandidateInterviewPackageUpdateRequest,
+    TrelloCandidateStatusRequest,
 )
 from open_loops import OpenLoopMonitor
 from follow_ups import FollowUpMonitor, normalize_follow_up_time
@@ -60,7 +62,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.38.7-dev")
+app = FastAPI(title="AI Commitment Operator", version="0.39.1-dev")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -230,6 +232,25 @@ def update_calendar_proposal(action_id: int, request: CalendarEventProposalUpdat
     return action
 
 
+@app.put("/actions/{action_id}/candidate-interview-package")
+def update_candidate_interview_package(
+    action_id: int, request: CandidateInterviewPackageUpdateRequest
+):
+    action = database.update_action_payload(
+        action_id,
+        {
+            "calendar_event": request.calendar_event.model_dump(),
+            "draft_subject": request.email_subject,
+            "suggested_reply": request.email_body,
+        },
+        {"candidate_interview_package"},
+        allow_failed_retry=True,
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable interview package was not found")
+    return action
+
+
 @app.put("/actions/{action_id}/decision-proposal")
 def update_decision_proposal(action_id: int, request: DecisionProposalUpdateRequest):
     action = database.update_action_payload(
@@ -332,7 +353,9 @@ def run_n8n_inbox_automation(
     """Allow authenticated n8n schedules to start the read-only inbox pipeline."""
     _require_n8n_secret(x_ai_operator_secret)
     try:
-        result = _execute_inbox_automation(request.label, request.max_results, "n8n")
+        # Scheduled scans inspect the full bounded window so a new labeled message
+        # cannot be hidden behind ten already-processed messages.
+        result = _execute_inbox_automation(request.label, max(request.max_results, 50), "n8n")
         result["new_work_count"] = len(result["processed"])
         result["requires_human_review"] = bool(
             result["processed"]
@@ -785,6 +808,26 @@ def execute_action(action_id: int):
                 payload.get("calendar_event") or {}
             )
             result = CalendarOperator(get_calendar_service()).create_event(proposal.model_dump())
+        elif action["action_type"] == "candidate_interview_package":
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = CalendarEventProposalUpdateRequest.model_validate(
+                payload.get("calendar_event") or {}
+            )
+            gmail = GmailOperator(get_gmail_service())
+            draft_result = gmail.create_reply_draft(
+                action["gmail_msg_id"], payload.get("suggested_reply") or "",
+                payload.get("draft_subject"),
+            )
+            try:
+                calendar_result = CalendarOperator(get_calendar_service()).create_event(
+                    proposal.model_dump()
+                )
+            except Exception:
+                if draft_result.get("draft_id"):
+                    gmail.delete_draft(draft_result["draft_id"])
+                raise
+            result = {"gmail_draft": draft_result, "calendar_event": calendar_result,
+                      "email_sent": False}
         elif action["action_type"] == "record_decision":
             if not action.get("entity_id"):
                 raise ValueError("Decision is not linked to a company or project")
@@ -812,9 +855,44 @@ def execute_action(action_id: int):
             record = database.create_operational_record(action, proposal.model_dump())
             result = {"record_id": record["id"], "record_type": record["record_type"],
                       "created": True}
+            # Candidate intake has one clear hand-off: after the human accepts the AI
+            # finding, place it on the hiring board. Decisions are then made in Trello.
+            if record["record_type"] == "candidate_review" and os.getenv("N8N_TRELLO_WEBHOOK_URL"):
+                try:
+                    trello_result = _dispatch_record_to_trello(record)
+                    result["trello"] = trello_result
+                except N8nDispatchError as dispatch_error:
+                    # The candidate record is still useful and can be retried from Cases.
+                    result["trello"] = {"status": "failed", "error": str(dispatch_error)}
         else:
             raise ValueError("This approved action has no external executor")
-        return database.finish_action(action_id, result)
+        finished = database.finish_action(action_id, result)
+        payload = json.loads(action.get("payload_json") or "{}")
+        candidate_review_id = payload.get("candidate_review_id")
+        if candidate_review_id:
+            trello = database.get_candidate_trello_dispatch(candidate_review_id)
+            webhook_url = os.getenv("N8N_TRELLO_CANDIDATE_RESULT_WEBHOOK_URL")
+            if trello and webhook_url:
+                sync_payload = {
+                    "record_id": candidate_review_id,
+                    "card_id": trello["external_id"],
+                    "status": "interview_scheduled" if action["action_type"] == "candidate_interview_package" else "rejection_drafted",
+                    "message": "Interview appointment and Gmail draft created." if action["action_type"] == "candidate_interview_package" else "Rejection Gmail draft created. Nothing was sent.",
+                    "result": result,
+                }
+                try:
+                    sync_result = dispatch_candidate_result(
+                        webhook_url, _n8n_shared_secret(), sync_payload
+                    )
+                    database.record_candidate_trello_sync(
+                        candidate_review_id, "trello_result_synced", sync_result
+                    )
+                except N8nDispatchError as sync_error:
+                    database.record_candidate_trello_sync(
+                        candidate_review_id, "trello_result_sync_failed",
+                        {"error": str(sync_error)},
+                    )
+        return finished
     except Exception as exc:
         database.fail_action(action_id, str(exc))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -843,11 +921,63 @@ def prepare_candidate_review_next_action(record_id: int, request: CandidateRevie
     return result
 
 
+@app.post("/integrations/n8n/trello-candidate-status")
+def receive_trello_candidate_status(
+    request: TrelloCandidateStatusRequest,
+    x_ai_operator_secret: str | None = Header(default=None),
+):
+    _require_n8n_secret(x_ai_operator_secret)
+    record = database.get_candidate_review_by_trello_card(request.card_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Candidate review for this Trello card was not found")
+    normalized = " ".join(request.list_name.casefold().replace("_", " ").split())
+    decision = {
+        "interview": "interview", "interview requested": "interview",
+        "rejected": "reject", "reject": "reject",
+        "on hold": "hold", "hold": "hold",
+    }.get(normalized)
+    if decision is None:
+        raise HTTPException(status_code=422, detail="Unsupported candidate Trello list")
+    try:
+        result = database.prepare_candidate_review_action(
+            record["id"], decision, f"Selected in Trello list: {request.list_name}"
+        )
+        duplicate = bool(result.pop("duplicate", False))
+    except ValueError as exc:
+        if "already waiting" not in str(exc):
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        result = {"record_id": record["id"], "status": record["status"], "action_id": None}
+        duplicate = True
+    response = {**result, "card_id": request.card_id, "duplicate": duplicate, "decision": decision,
+                "requires_human_review": decision != "hold"}
+    database.record_candidate_trello_transition(
+        record["id"], request.card_id, request.list_name, request.event_id, response
+    )
+    return response
+
+
 def _n8n_trello_config():
     webhook_url = os.getenv(
         "N8N_TRELLO_WEBHOOK_URL", "http://127.0.0.1:5678/webhook/ai-operator-trello"
     )
     return webhook_url, _n8n_shared_secret()
+
+
+def _dispatch_record_to_trello(record: dict):
+    """Idempotently dispatch an existing record and return its dispatch state."""
+    dispatch, claimed = database.claim_integration_dispatch(record["id"], "trello")
+    if not claimed:
+        if dispatch["status"] == "completed":
+            return {"dispatch": dispatch, "duplicate": True}
+        raise N8nDispatchError("This Trello dispatch is already in progress")
+    try:
+        webhook_url, webhook_secret = _n8n_trello_config()
+        result = dispatch_operational_record(webhook_url, webhook_secret, record)
+        completed = database.finish_integration_dispatch(dispatch["id"], result)
+        return {"dispatch": completed, "duplicate": False}
+    except N8nDispatchError as exc:
+        database.fail_integration_dispatch(dispatch["id"], str(exc))
+        raise
 
 
 @app.post("/operational-records/{record_id}/send-to-trello")
@@ -856,18 +986,9 @@ def send_operational_record_to_trello(record_id: int):
     record = database.get_operational_record(record_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Operational record was not found")
-    dispatch, claimed = database.claim_integration_dispatch(record_id, "trello")
-    if not claimed:
-        if dispatch["status"] == "completed":
-            return {"dispatch": dispatch, "duplicate": True}
-        raise HTTPException(status_code=409, detail="This Trello dispatch is already in progress")
     try:
-        webhook_url, webhook_secret = _n8n_trello_config()
-        result = dispatch_operational_record(webhook_url, webhook_secret, record)
-        completed = database.finish_integration_dispatch(dispatch["id"], result)
-        return {"dispatch": completed, "duplicate": False}
+        return _dispatch_record_to_trello(record)
     except N8nDispatchError as exc:
-        database.fail_integration_dispatch(dispatch["id"], str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

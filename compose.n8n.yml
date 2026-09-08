@@ -12,6 +12,7 @@ services:
     environment:
       DATABASE_PATH: /data/operator.db
       N8N_TRELLO_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-trello
+      N8N_TRELLO_CANDIDATE_RESULT_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-candidate-result
       N8N_SHARED_SECRET: ${AI_OPERATOR_WEBHOOK_SECRET}
     volumes:
       - ./operator.db:/data/operator.db
@@ -28,11 +29,10 @@ services:
       N8N_HOST: 127.0.0.1
       N8N_PORT: 5678
       N8N_PROTOCOL: http
-      WEBHOOK_URL: http://127.0.0.1:5678/
+      N8N_WEBHOOK_URL: http://127.0.0.1:5678/
       N8N_SECURE_COOKIE: "false"
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-      N8N_RUNNERS_ENABLED: "true"
       GENERIC_TIMEZONE: Europe/Amsterdam
       TZ: Europe/Amsterdam
     volumes:

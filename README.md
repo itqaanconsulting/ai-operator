@@ -18,6 +18,9 @@ automatically.
   support cases, document-review tasks, candidate reviews, and escalation records.
 - Sends an approved business record to Trello through a published n8n workflow
   only after a separate human confirmation, with duplicate-card protection.
+- Turns Trello candidate decisions into idempotent approval work and executes an
+  approved interview as one Calendar event plus one unsent Gmail draft, then
+  writes the result back to the Trello card through n8n.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
 - Provides an authenticated n8n schedule entry point for proactive Gmail intake;

@@ -64,13 +64,16 @@ function dateTimeLocalValue(value) {
   return match ? match[1] : "";
 }
 
-function actionLabel(type) {
+function actionLabel(type, recordType) {
   return ({
     draft_reply: "Draft an email reply",
     calendar_event: "Create a calendar event",
+    candidate_interview_package: "Create interview appointment and Gmail draft",
     record_decision: "Save a business decision",
     schedule_follow_up: "Schedule a follow-up",
-    create_operational_record: "Create a business record",
+    create_operational_record: recordType === "candidate_review"
+      ? "Add candidate to the hiring board"
+      : "Create a business record",
     open_loop_review: "Review an open commitment",
   })[type] || "Review this finding";
 }
@@ -79,9 +82,12 @@ function outcomeLabel(type, recordType) {
   return ({
     draft_reply: "Create Gmail draft",
     calendar_event: "Create calendar event",
+    candidate_interview_package: "Create interview package",
     record_decision: "Save decision to business memory",
     schedule_follow_up: "Schedule follow-up",
-    create_operational_record: `Create ${recordType?.replaceAll("_", " ") || "business record"}`,
+    create_operational_record: recordType === "candidate_review"
+      ? "Send candidate to hiring board"
+      : `Create ${recordType?.replaceAll("_", " ") || "business record"}`,
   })[type] || null;
 }
 
@@ -99,11 +105,21 @@ function renderEntities() {
 
 function renderCommitments() {
   const latestRun = state.automationRuns.find(item => item.workflow === "inbox_automation" && item.status === "completed");
-  const latestProcessed = new Set(parseJson(latestRun?.result_json).processed || []);
-  const newGroups = state.workQueue.filter(group => latestProcessed.has(group.email.gmail_msg_id));
-  const earlierGroups = state.workQueue.filter(group => !latestProcessed.has(group.email.gmail_msg_id));
-  const renderGroups = (groups, isNew) => groups.map(group => `
-    <details class="work-group" data-email-group="${group.email.id}" ${isNew || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}>
+  const latestProcessed = new Set(
+    (parseJson(latestRun?.result_json).processed || []).map(item => item.gmail_msg_id)
+  );
+  const readyGroups = state.workQueue.filter(group => group.actions.some(action => {
+    const payload = parseJson(action.payload_json);
+    return Boolean(payload.candidate_review_id)
+      && ["pending_approval", "approved", "failed"].includes(action.status);
+  }));
+  const readyEmailIds = new Set(readyGroups.map(group => group.email.id));
+  const newGroups = state.workQueue.filter(group => !readyEmailIds.has(group.email.id)
+    && latestProcessed.has(group.email.gmail_msg_id));
+  const earlierGroups = state.workQueue.filter(group => !readyEmailIds.has(group.email.id)
+    && !latestProcessed.has(group.email.gmail_msg_id));
+  const renderGroups = (groups, expanded) => groups.map(group => `
+    <details class="work-group" data-email-group="${group.email.id}" ${expanded || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}>
       <summary class="work-group-header"><div><span class="source-label">EMAIL SUBJECT</span><h3 class="email-subject">${escapeHtml(group.email.subject)}</h3></div><span class="finding-count">${group.commitments.length} open finding${group.commitments.length === 1 ? "" : "s"}</span></summary>
       ${group.commitments.map((item, itemIndex) => {
         const action = group.actions.find(candidate => candidate.commitment_id === item.id && candidate.action_type !== "open_loop_review")
@@ -113,32 +129,40 @@ function renderCommitments() {
         const decision = payload.decision_record || {};
         const followUp = payload.follow_up || {};
         const record = payload.operational_record || {};
+        const isCandidateAction = Boolean(payload.candidate_review_id);
         const outcome = action ? outcomeLabel(action.action_type, record.record_type) : null;
         const proposalReady = action?.action_type === "calendar_event" ? Boolean(event.start_at)
+          : action?.action_type === "candidate_interview_package" ? Boolean(event.start_at && payload.suggested_reply)
           : action?.action_type === "record_decision" ? Boolean(decision.title && decision.decision)
           : action?.action_type === "schedule_follow_up" ? Boolean(followUp.follow_up_at && followUp.subject && followUp.body)
           : true;
-        const decisionStep = action?.status === "approved" ? "Ready to run" : action?.status === "pending_approval" ? "Your decision" : "No action proposed";
+        const decisionStep = action?.status === "approved" ? "Ready to run"
+          : action?.status === "pending_approval" && isCandidateAction ? "Complete details"
+          : action?.status === "pending_approval" ? "Your decision" : "No action proposed";
         return `<article class="work-item">
           <div class="finding-heading"><div><span>FINDING ${itemIndex + 1} OF ${group.commitments.length}</span><h4>${escapeHtml(item.title)}</h4></div><span class="decision-state">${decisionStep}</span></div>
           <div class="meta"><span class="pill ${escapeHtml(item.urgency)}">${escapeHtml(item.urgency)}</span><span class="pill ${deadlineState(item.deadline) === "overdue" ? "overdue" : ""}">${escapeHtml(deadlineState(item.deadline))}</span>${payload.work_item_kind ? `<span class="pill">${escapeHtml(payload.work_item_kind.replaceAll("_", " "))}</span>` : payload.scenario ? `<span class="pill">${escapeHtml(payload.scenario.replaceAll("_", " "))}</span>` : ""}</div>
-          ${action ? `<div class="proposed-action"><span>AI RECOMMENDS</span><h5>${escapeHtml(actionLabel(action.action_type))}</h5><p>${escapeHtml(action.description)}</p></div>` : ""}
-          ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor"><summary>Review or edit email draft</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea><button class="button secondary" data-save-draft="${action.id}">Save draft edits — do not approve</button></div></details>` : ""}
+          ${action ? `<div class="proposed-action"><span>AI RECOMMENDS</span><h5>${escapeHtml(actionLabel(action.action_type, record.record_type))}</h5><p>${escapeHtml(action.description)}</p></div>` : ""}
+          ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor" ${isCandidateAction ? "open" : ""}><summary>${isCandidateAction ? "Rejection email" : "Review or edit email draft"}</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea>${isCandidateAction ? "" : `<button class="button secondary" data-save-draft="${action.id}">Save draft edits — do not approve</button>`}</div></details>` : ""}
           ${action?.action_type === "calendar_event" ? `<details class="draft-editor" ${action.status === "failed" || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}><summary>${action.status === "failed" ? "Fix calendar details before retrying" : "Review or edit calendar event"}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label><label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save event edits — do not approve</button></div></details>` : ""}
+          ${action?.action_type === "candidate_interview_package" ? `<details class="draft-editor" open><summary>Interview details</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Interview title"><label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label><label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location or meeting link"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails"><input class="wide" data-package-subject="${action.id}" value="${escapeHtml(payload.draft_subject || "Interview invitation")}" aria-label="Email subject"><textarea class="wide" data-package-body="${action.id}" aria-label="Invitation email">${escapeHtml(payload.suggested_reply || "")}</textarea></div></details>` : ""}
           ${action?.action_type === "record_decision" ? `<details class="draft-editor"><summary>Review or edit business decision</summary><div class="draft-editor-body"><input data-decision-title="${action.id}" value="${escapeHtml(decision.title || item.title)}" aria-label="Decision title"><textarea data-decision-outcome="${action.id}" aria-label="Decision outcome" placeholder="Enter the final decision before approval">${escapeHtml(decision.decision || "")}</textarea><textarea data-decision-rationale="${action.id}" aria-label="Decision rationale" placeholder="Rationale (optional)">${escapeHtml(decision.rationale || "")}</textarea><button class="button secondary" data-save-decision="${action.id}">Save decision edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor"><summary>Review or edit follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up edits — do not approve</button></div></details>` : ""}
-          ${action?.action_type === "create_operational_record" ? `<details class="draft-editor"><summary>Review or edit ${escapeHtml(record.record_type?.replaceAll("_", " ") || "business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save record edits — do not approve</button></div></details>` : ""}
+          ${action?.action_type === "create_operational_record" && record.record_type !== "candidate_review" ? `<details class="draft-editor"><summary>Review or edit ${escapeHtml(record.record_type?.replaceAll("_", " ") || "business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save record edits — do not approve</button></div></details>` : ""}
           <div class="card-actions">
-            ${action?.status === "pending_approval" && proposalReady && outcome ? `<button class="button approve" data-approve-execute="${action.id}" data-outcome="${escapeHtml(outcome)}">${escapeHtml(outcome)}</button>` : ""}
-            ${action?.status === "pending_approval" && !proposalReady ? '<span class="missing-details">Open the editor above and complete the required details.</span>' : ""}
+            ${action?.status === "pending_approval" && action.action_type === "candidate_interview_package" ? `<button class="button approve" data-schedule-interview="${action.id}">Schedule interview</button>` : ""}
+            ${action?.status === "pending_approval" && action.action_type === "draft_reply" && isCandidateAction ? `<button class="button approve" data-create-rejection-draft="${action.id}">Create rejection draft</button>` : ""}
+            ${action?.status === "pending_approval" && !isCandidateAction && proposalReady && outcome ? `<button class="button approve" data-approve-execute="${action.id}" data-outcome="${escapeHtml(outcome)}">${escapeHtml(outcome)}</button>` : ""}
+            ${action?.status === "pending_approval" && !isCandidateAction && !proposalReady ? '<span class="missing-details">Open the editor above and complete the required details.</span>' : ""}
             ${action?.status === "approved" && outcome ? `<button class="button execute" data-execute="${action.id}">${escapeHtml(outcome)}</button>` : ""}
             ${!outcome ? '<span class="no-automation">No automated action is available for this finding.</span>' : ""}
             <button class="button dismiss" data-complete="${item.id}">Dismiss — create nothing</button>
           </div>
         </article>`;
-      }).join("")}
+  }).join("")}
     </details>`).join("");
   elements.commitments.innerHTML = state.workQueue.length ? `
+    ${readyGroups.length ? `<section class="queue-section"><div class="queue-section-heading"><h3>Ready to finish</h3><span>${readyGroups.length} decision${readyGroups.length === 1 ? "" : "s"} from Trello</span></div>${renderGroups(readyGroups, true)}</section>` : ""}
     <section class="queue-section"><div class="queue-section-heading"><h3>New from latest scan</h3><span>${newGroups.length} email${newGroups.length === 1 ? "" : "s"}</span></div>${newGroups.length ? renderGroups(newGroups, true) : '<p class="queue-empty">No new email findings in the latest scan.</p>'}</section>
     <section class="queue-section"><div class="queue-section-heading"><h3>Earlier open work</h3><span>${earlierGroups.length} email${earlierGroups.length === 1 ? "" : "s"}</span></div>${earlierGroups.length ? renderGroups(earlierGroups, false) : '<p class="queue-empty">No earlier work is still open.</p>'}</section>` : '<p class="empty-state">No work needs attention.</p>';
   elements.commitments.querySelectorAll("[data-complete]").forEach(button => {
@@ -148,6 +172,8 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-approve-execute]").forEach(button => button.addEventListener("click", () => approveAndExecuteAction(button.dataset.approveExecute, button.dataset.outcome, button)));
   elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
+  elements.commitments.querySelectorAll("[data-schedule-interview]").forEach(button => button.addEventListener("click", () => scheduleInterview(button.dataset.scheduleInterview, button)));
+  elements.commitments.querySelectorAll("[data-create-rejection-draft]").forEach(button => button.addEventListener("click", () => createCandidateRejectionDraft(button.dataset.createRejectionDraft, button)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
   elements.commitments.querySelectorAll("[data-save-follow-up]").forEach(button => button.addEventListener("click", () => saveFollowUpProposal(button.dataset.saveFollowUp)));
   elements.commitments.querySelectorAll("[data-save-record]").forEach(button => button.addEventListener("click", () => saveOperationalRecord(button.dataset.saveRecord)));
@@ -191,37 +217,17 @@ function renderCandidateReviews() {
       <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(record.status.replaceAll("_", " "))}</span></div>
       <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
       <p>${escapeHtml(record.notes || record.next_action)}</p>
-      ${["open", "on_hold"].includes(record.status) ? `<div class="candidate-actions"><button class="button primary" data-candidate-action="interview" data-candidate-id="${record.id}">Prepare interview</button><button class="button secondary" data-candidate-action="reject" data-candidate-id="${record.id}">Prepare rejection email</button><button class="button quiet-action" data-candidate-action="hold" data-candidate-id="${record.id}">Keep under review</button></div>` : ""}
-      ${["interview_pending", "rejection_pending"].includes(record.status) ? '<p class="candidate-next">Next step is ready in the Review inbox.</p>' : ""}
+      ${record.trello_status === "completed"
+        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.status === "open" ? '<span class="candidate-next">Move this card to Interview, Rejected, or On hold.</span>' : ""}</div>`
+        : `<div class="candidate-actions"><button class="button primary" data-send-candidate-trello="${record.id}">${record.trello_status === "failed" ? "Retry hiring board" : "Send to hiring board"}</button></div>`}
+      ${["interview_pending", "rejection_pending"].includes(record.status) ? '<p class="candidate-next">Trello decision received. Complete the final approval in Review inbox.</p>' : ""}
+      ${record.status === "on_hold" ? '<p class="candidate-next">Candidate is on hold. No external action was created.</p>' : ""}
       ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
       ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
     </article>`).join("") : '<p class="empty-state">No candidate reviews yet.</p>';
-  elements.candidateReviews.querySelectorAll("[data-candidate-action]").forEach(button => button.addEventListener("click", () => prepareCandidateAction(button.dataset.candidateId, button.dataset.candidateAction, button)));
-}
-
-async function prepareCandidateAction(id, decision, button) {
-  const originalLabel = button.textContent;
-  button.disabled = true;
-  button.textContent = "Working…";
-  try {
-    const candidate = state.operationalRecords.find(record => String(record.id) === String(id));
-    const result = await api(`/candidate-reviews/${id}/next-action`, { method: "POST", body: JSON.stringify({ decision, note: "Selected in Candidate reviews" }) });
-    if (result.action_id) {
-      state.focusEmailId = candidate?.email_id || null;
-      notify("Next step prepared. Review the details before creating anything.");
-      switchView("documents");
-    } else {
-      notify("Candidate remains under review.");
-    }
-    await refresh();
-    if (state.focusEmailId) {
-      document.querySelector(`[data-email-group="${state.focusEmailId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  } catch (error) {
-    notify(error.message, true);
-    button.disabled = false;
-    button.textContent = originalLabel;
-  }
+  elements.candidateReviews.querySelectorAll("[data-send-candidate-trello]").forEach(button => {
+    button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendCandidateTrello));
+  });
 }
 
 async function sendRecordToTrello(id) {
@@ -540,6 +546,59 @@ async function saveCalendarProposal(id) {
     await api(`/actions/${id}/calendar-proposal`, { method: "PUT", body: JSON.stringify(proposal) });
     notify("Calendar proposal saved. Review and approve it before creating the event."); await refresh();
   } catch (error) { notify(error.message, true); }
+}
+
+async function scheduleInterview(id, button) {
+  const value = name => elements.commitments.querySelector(`[data-event-${name}="${id}"]`).value.trim();
+  const attendees = value("attendees").split(",").map(item => item.trim()).filter(Boolean);
+  const body = {
+    calendar_event: { title: value("title"), start_at: value("start"), end_at: value("end") || null, location: value("location") || null, attendees },
+    email_subject: elements.commitments.querySelector(`[data-package-subject="${id}"]`).value.trim(),
+    email_body: elements.commitments.querySelector(`[data-package-body="${id}"]`).value.trim(),
+  };
+  if (!body.calendar_event.title || !body.calendar_event.start_at || !body.email_subject || !body.email_body) {
+    notify("Choose a start time and complete the interview title and email.", true);
+    return;
+  }
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Scheduling…";
+  try {
+    await api(`/actions/${id}/candidate-interview-package`, { method: "PUT", body: JSON.stringify(body) });
+    await api(`/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note: "Interview decision approved in Trello; execution details confirmed in dashboard" }) });
+    await api(`/actions/${id}/execute`, { method: "POST" });
+    notify("Interview scheduled. Calendar event and Gmail draft created.");
+    await refresh();
+  } catch (error) {
+    notify(`Interview could not be scheduled: ${error.message}`, true);
+    await refresh();
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function createCandidateRejectionDraft(id, button) {
+  const subject = elements.commitments.querySelector(`[data-draft-subject="${id}"]`).value.trim();
+  const body = elements.commitments.querySelector(`[data-draft-body="${id}"]`).value.trim();
+  if (!subject || !body) {
+    notify("Complete the rejection email subject and message.", true);
+    return;
+  }
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Creating…";
+  try {
+    await api(`/actions/${id}/draft`, { method: "PUT", body: JSON.stringify({ subject, body }) });
+    await api(`/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note: "Rejection decision approved in Trello; draft confirmed in dashboard" }) });
+    await api(`/actions/${id}/execute`, { method: "POST" });
+    notify("Rejection draft created in Gmail. Nothing was sent.");
+    await refresh();
+  } catch (error) {
+    notify(`Rejection draft could not be created: ${error.message}`, true);
+    await refresh();
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 async function saveActionDraft(id) {

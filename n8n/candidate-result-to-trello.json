@@ -1,0 +1,28 @@
+{
+  "id": "CandidateResult01",
+  "name": "AI Operator - Candidate result to Trello",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "ai-operator-candidate-result", "authentication": "headerAuth", "responseMode": "lastNode", "options": {}},
+      "id": "candidate-result-webhook",
+      "name": "Completed candidate action",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "ai-operator-candidate-result"
+    },
+    {
+      "parameters": {"resource": "cardComment", "operation": "create", "cardId": {"mode": "id", "value": "={{ $json.body.card_id }}"}, "text": "=AI Operator completed: {{ $json.body.message }}\n\nStatus: {{ $json.body.status }}\nRecord: #{{ $json.body.record_id }}"},
+      "id": "comment-candidate-result",
+      "name": "Write result to Trello",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [280, 0]
+    }
+  ],
+  "connections": {"Completed candidate action": {"main": [[{"node": "Write result to Trello", "type": "main", "index": 0}]]}},
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "active": false,
+  "tags": []
+}

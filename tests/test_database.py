@@ -164,6 +164,25 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(action["status"], "rejected")
         self.assertEqual(self.db.list_work_queue(), [])
 
+    def test_active_integration_approval_remains_visible_if_commitment_was_completed(self):
+        _, commitment_id, action_id = self.db.save_analysis(
+            EmailRequest(subject="Candidate decision", body="Interview candidate"),
+            EmailAnalysis(
+                category="task", summary="Interview requested.",
+                commitment_title="Interview candidate", proposed_action="Prepare interview.",
+            ),
+        )
+        with self.db.connect() as connection:
+            connection.execute(
+                "UPDATE commitments SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (commitment_id,),
+            )
+
+        queue = self.db.list_work_queue()
+
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]["actions"][0]["id"], action_id)
+
     def test_reply_draft_can_be_edited_before_execution(self):
         _, _, action_id = self.db.save_analysis(
             EmailRequest(subject="Reply", body="Please reply"),

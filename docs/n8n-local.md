@@ -95,3 +95,35 @@ Execute the workflow manually once before publishing it. The result includes
 `new_work_count`, `requires_human_review`, and `external_action_taken: false`.
 The workflow can read and analyze labeled mail and create internal approval
 items, but it cannot approve them or perform Gmail, Calendar, or Trello writes.
+
+## Complete candidate workflow
+
+Create these lists on the same Trello recruitment board:
+
+- `AI Inbox`
+- `Interview`
+- `Rejected`
+- `On hold`
+
+Import `n8n/trello-candidate-decisions.json`. Connect the existing Trello
+credential to all three Trello nodes and replace each placeholder list ID with
+the matching list. The workflow polls those decision lists every two minutes and
+calls the private, authenticated AI Operator endpoint. Repeated polls are safe:
+the backend creates at most one active follow-up action per candidate.
+
+Import `n8n/candidate-result-to-trello.json`. Configure its Webhook node with
+the existing Header Auth credential and its Trello node with the existing Trello
+credential. Publish it at `/webhook/ai-operator-candidate-result`.
+
+The resulting flow is:
+
+```text
+Gmail application -> AI review -> Trello AI Inbox
+Trello Interview -> n8n -> one dashboard approval
+approval -> Google Calendar event + Gmail draft -> Trello result comment
+```
+
+Moving a card to `Rejected` prepares an editable Gmail rejection draft. Moving
+it to `On hold` records the status without creating an external action. The
+operator never sends email automatically, and Calendar attendee notifications
+remain disabled; the recruiter retains the final send decision.
