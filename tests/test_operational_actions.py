@@ -167,16 +167,27 @@ class OperationalActionTest(unittest.TestCase):
         main.execute_action(action_id)
         record = main.database.list_operational_records()[0]
         prepared = main.database.prepare_candidate_review_action(record["id"], "hire")
+        onboarding = CandidateOnboardingPackageUpdateRequest(
+            employee_name="Amina Yusuf", personal_email="amina@example.com",
+            job_title="Automation Engineer", start_date="2030-10-01",
+            employment_type="permanent", legal_entity="Example Operations B.V.",
+            manager="Hiring Manager", work_location="Amsterdam", hours_per_week=40,
+        )
 
         main.update_candidate_onboarding_package(
-            prepared["action_id"],
-            CandidateOnboardingPackageUpdateRequest(
-                employee_name="Amina Yusuf", personal_email="amina@example.com",
-                job_title="Automation Engineer", start_date="2030-10-01",
-                employment_type="permanent", legal_entity="Example Operations B.V.",
-                manager="Hiring Manager", work_location="Amsterdam", hours_per_week=40,
-            ),
+            prepared["action_id"], onboarding,
         )
+        original_action = main.database.get_action_context(prepared["action_id"])
+        duplicate_payload = json.dumps({
+            "candidate_review_id": record["id"], "onboarding": onboarding.model_dump()
+        })
+        with main.database.connect() as connection:
+            duplicate_action_id = connection.execute(
+                """INSERT INTO proposed_actions
+                   (commitment_id, email_id, action_type, description, payload_json, status)
+                   VALUES (?, ?, 'create_onboarding_package', 'Retry onboarding', ?, 'pending_approval')""",
+                (original_action["commitment_id"], original_action["email_id"], duplicate_payload),
+            ).lastrowid
         main.approve_action(prepared["action_id"], DecisionRequest(note="HR reviewed"))
         result = main.execute_action(prepared["action_id"])
         updated = main.database.get_operational_record(record["id"])
@@ -189,6 +200,20 @@ class OperationalActionTest(unittest.TestCase):
         self.assertIn("Example Operations B.V.", package["contract_draft"])
         self.assertIn("1. PARTIES", package["contract_draft"])
         self.assertIn("4. TERMS TO BE COMPLETED BY HR AND LEGAL", package["contract_draft"])
+
+        duplicate_action = main.database.get_action_context(duplicate_action_id)
+        self.assertEqual(duplicate_action["status"], "rejected")
+        recovered = main.database.create_onboarding_package(
+            duplicate_action, onboarding.model_dump(), main.build_contract_draft(onboarding)
+        )
+
+        self.assertTrue(recovered["duplicate"])
+        self.assertEqual(recovered["id"], package_id)
+        with main.database.connect() as connection:
+            package_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM onboarding_packages"
+            ).fetchone()["count"]
+        self.assertEqual(package_count, 1)
 
     def test_trello_recreates_missing_interview_approval_for_pending_candidate(self):
         _, _, action_id = main.database.save_analysis(

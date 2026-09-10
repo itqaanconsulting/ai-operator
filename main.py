@@ -945,6 +945,7 @@ def execute_action(action_id: int):
                 "employee_record_created": True,
                 "contract_draft_created": True,
                 "contract_sent": False,
+                "existing_package_reused": package["duplicate"],
             }
         elif action["action_type"] == "record_decision":
             if not action.get("entity_id"):

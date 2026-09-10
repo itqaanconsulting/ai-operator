@@ -242,15 +242,16 @@ function renderOperationalRecords() {
   });
 }
 
-function candidateActionFor(recordId) {
+function candidateActionFor(record) {
+  if (record.status === "hired" && record.onboarding_package_id) return null;
   return state.actions
-    .filter(action => String(parseJson(action.payload_json).candidate_review_id) === String(recordId)
+    .filter(action => String(parseJson(action.payload_json).candidate_review_id) === String(record.id)
       && ["pending_approval", "approved", "failed"].includes(action.status))
     .sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
 }
 
 function candidateNextStep(record) {
-  const action = candidateActionFor(record.id);
+  const action = candidateActionFor(record);
   if (!action) return "";
   const payload = parseJson(action.payload_json);
   const event = payload.calendar_event || {};

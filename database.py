@@ -1169,7 +1169,7 @@ class Database:
         if not candidate_review_id:
             raise ValueError("Onboarding action is not linked to a candidate")
         with self.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """INSERT OR IGNORE INTO onboarding_packages
                    (source_action_id, candidate_review_id, employee_name, personal_email,
                     job_title, start_date, employment_type, legal_entity, manager,
@@ -1181,14 +1181,23 @@ class Database:
                  proposal.get("work_location"), proposal["hours_per_week"], contract_draft),
             )
             row = connection.execute(
-                "SELECT * FROM onboarding_packages WHERE source_action_id = ?", (action["id"],)
+                """SELECT * FROM onboarding_packages
+                   WHERE source_action_id = ? OR candidate_review_id = ?
+                   ORDER BY CASE WHEN source_action_id = ? THEN 0 ELSE 1 END
+                   LIMIT 1""",
+                (action["id"], candidate_review_id, action["id"]),
             ).fetchone()
-            connection.execute(
-                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
-                   VALUES ('candidate_review', ?, 'onboarding_package_created', ?)""",
-                (candidate_review_id, json.dumps({"onboarding_package_id": row["id"]})),
-            )
-            return dict(row)
+            if row is None:
+                raise ValueError("Onboarding package could not be created or recovered")
+            if cursor.rowcount:
+                connection.execute(
+                    """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                       VALUES ('candidate_review', ?, 'onboarding_package_created', ?)""",
+                    (candidate_review_id, json.dumps({"onboarding_package_id": row["id"]})),
+                )
+            result = dict(row)
+            result["duplicate"] = not bool(cursor.rowcount)
+            return result
 
     def get_onboarding_package(self, package_id: int):
         with self.connect() as connection:
@@ -1979,6 +1988,17 @@ class Database:
                     "UPDATE operational_records SET status = ? WHERE id = ? AND record_type = 'candidate_review'",
                     (candidate_status, candidate_review_id),
                 )
+                if current["action_type"] == "create_onboarding_package":
+                    connection.execute(
+                        """UPDATE proposed_actions
+                           SET status = 'rejected',
+                               decision_note = 'Superseded by completed onboarding package',
+                               decided_at = CURRENT_TIMESTAMP
+                           WHERE id != ? AND action_type = 'create_onboarding_package'
+                             AND status IN ('pending_approval', 'approved')
+                             AND json_extract(payload_json, '$.candidate_review_id') = ?""",
+                        (action_id, candidate_review_id),
+                    )
             return dict(connection.execute(
                 "SELECT * FROM proposed_actions WHERE id = ?", (action_id,)
             ).fetchone())
