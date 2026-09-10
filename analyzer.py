@@ -283,7 +283,10 @@ class EmailAnalyzer:
         answer = OperatorAnswer.model_validate(json.loads(content))
         allowed = set(context.get("available_evidence_keys", []))
         answer.evidence_keys = [key for key in answer.evidence_keys if key in allowed]
-        answer.matched_entities = context.get("matched_entity_names", [])
+        answer.matched_entities = list(dict.fromkeys([
+            *context.get("matched_entity_names", []),
+            *context.get("matched_record_names", []),
+        ]))
         return answer
 
     def create_operator_plan(self, goal: str, context: dict) -> OperatorPlan:

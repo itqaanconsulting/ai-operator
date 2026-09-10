@@ -35,7 +35,8 @@ automatically.
 - Manually imports only emails carrying a selected Gmail label.
 - Creates a Gmail draft in the original thread after explicit approval.
 - Groups related emails, commitments, actions, and decisions by company or project.
-- Produces a grounded status brief with a recommended next action.
+- Produces a grounded status brief with a recommended next action, including for
+  candidate records that are not linked to a company or project.
 - Reviews uploaded PDF, DOCX, and TXT business documents and links them to context.
 
 The Gmail poller does not start automatically. Importing does not change labels

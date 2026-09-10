@@ -237,16 +237,25 @@ function renderOperationalRecords() {
 
 function renderCandidateReviews() {
   const candidates = state.operationalRecords.filter(record => record.record_type === "candidate_review");
+  const statusLabels = {
+    open: "New application",
+    interview_pending: "Schedule interview",
+    interview_scheduled: "Interview confirmed",
+    rejection_pending: "Prepare rejection",
+    rejection_drafted: "Rejected — email ready",
+    on_hold: "On hold",
+  };
   document.querySelector("#candidate-count").textContent = `${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`;
   elements.candidateReviews.innerHTML = candidates.length ? candidates.map(record => `
     <article class="candidate-card">
-      <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(record.status.replaceAll("_", " "))}</span></div>
+      <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(statusLabels[record.status] || record.status.replaceAll("_", " "))}</span></div>
       <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
       <p>${escapeHtml(record.notes || record.next_action)}</p>
       ${record.trello_status === "completed"
         ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Rejected, or On hold.</span>' : ""}</div>`
         : `<div class="candidate-actions"><button class="button primary" data-send-candidate-trello="${record.id}">${record.trello_status === "failed" ? "Retry hiring board" : "Send to hiring board"}</button></div>`}
-      ${["interview_pending", "rejection_pending"].includes(record.status) ? '<p class="candidate-next">Trello decision received. Complete the final approval in Review inbox.</p>' : ""}
+      ${record.status === "interview_pending" ? '<p class="candidate-next">Trello decision received. Choose a time and confirm execution in Review inbox.</p>' : ""}
+      ${record.status === "rejection_pending" ? '<p class="candidate-next">Trello decision received. Review the rejection email in Review inbox.</p>' : ""}
       ${record.status === "on_hold" ? '<p class="candidate-next">Candidate is on hold. No external action was created.</p>' : ""}
       ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
       ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
@@ -483,7 +492,7 @@ async function askOperator(event) {
         ${listBlock("Recommended next actions", result.recommended_next_actions, true)}
         ${listBlock("Missing information", result.missing_information)}
         <section class="status-block"><h3>Evidence</h3><p>${result.evidence_keys.length ? result.evidence_keys.map(escapeHtml).join(" · ") : "No supporting records found."}</p></section>
-        <section class="status-block"><h3>Matched entities</h3><p>${result.matched_entities.length ? result.matched_entities.map(escapeHtml).join(", ") : "Global context"}</p></section>
+        <section class="status-block"><h3>Matched context</h3><p>${result.matched_entities.length ? result.matched_entities.map(escapeHtml).join(", ") : "Global context"}</p></section>
       </div>`;
   } catch (error) { elements.operatorAnswer.className = "operator-answer error"; elements.operatorAnswer.textContent = error.message; }
 }

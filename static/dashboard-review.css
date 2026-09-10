@@ -69,3 +69,14 @@
 .memory-heading h2 { font-size: 17px; }
 .memory-heading p { margin-top: 3px; color: var(--muted); font-size: 13px; }
 @media (max-width: 560px) { .inbox-summary { grid-template-columns: 1fr; } .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
+.candidate-status-search {
+  margin: 0 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.candidate-status-search > summary {
+  font-size: 1rem;
+  font-weight: 700;
+}

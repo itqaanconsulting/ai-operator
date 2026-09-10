@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,6 +68,37 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(len(queue), 1)
         self.assertEqual(queue[0]["email"]["subject"], "Invoice")
         self.assertEqual(len(queue[0]["commitments"]), 2)
+
+    def test_operator_question_finds_candidate_without_entity(self):
+        _, _, action_id = self.db.save_analysis(
+            EmailRequest(
+                subject="Application for Backend Developer — Sarah Johnson",
+                body="Sarah Johnson has five years of Python experience.",
+                sender="sarah@example.com",
+            ),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sarah Johnson applied.",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Application for Backend Developer",
+                    proposed_action="Review Sarah Johnson for an interview.",
+                    owner="Recruiting", notes="Candidate Sarah Johnson; Python experience.",
+                )],
+            ),
+        )
+        action = self.db.get_action_context(action_id)
+        proposal = json.loads(action["payload_json"])["operational_record"]
+        record = self.db.create_operational_record(action, proposal)
+
+        context = self.db.operator_question_context(
+            "What is the current status of candidate Sarah Johnson?"
+        )
+
+        key = f"operational_records:{record['id']}"
+        self.assertIn(key, context["available_evidence_keys"])
+        self.assertIn("Application for Backend Developer", context["matched_record_names"])
+        matched = [item for item in context["records"] if item["source_key"] == key]
+        self.assertEqual(matched[0]["record"]["source_subject"],
+                         "Application for Backend Developer — Sarah Johnson")
 
     def test_init_backfills_candidate_review_when_model_omitted_action(self):
         _, commitment_id, action_id = self.db.save_analysis(

@@ -9,5 +9,5 @@ def get_calendar_service():
 
 if __name__ == "__main__":
     service = get_calendar_service()
-    service.calendarList().list(maxResults=1).execute()
+    service.events().list(calendarId="primary", maxResults=1, singleEvents=True).execute()
     print("Google Calendar API connection successful.")

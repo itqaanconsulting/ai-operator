@@ -1467,6 +1467,7 @@ class Database:
     def operator_question_context(self, question: str):
         matches = self.match_entities(question)
         matched_names = [item["name"] for item in matches]
+        matched_record_names = []
         records = []
         evidence_keys = []
         if matches:
@@ -1491,8 +1492,63 @@ class Database:
                     key = f"{collection}:{record_id}"
                     evidence_keys.append(key)
                     records.append({"source_key": key, "record_type": collection, "record": row})
+
+        # Operational records such as candidate reviews do not always belong to a
+        # company/project entity. Retrieve them independently so questions such as
+        # "What is the status of Sarah Johnson?" still have grounded evidence.
+        ignored_terms = {
+            "what", "the", "current", "status", "candidate", "and", "next", "action",
+            "for", "about", "please", "tell", "show", "with", "from", "this", "that",
+            "wat", "het", "een", "huidige", "van", "kandidaat", "volgende", "actie",
+            "voor", "over", "vertel", "laat", "zien", "met", "deze", "die", "mij",
+        }
+        query_terms = {
+            term for term in re.findall(r"[a-z0-9]+", question.casefold())
+            if len(term) >= 3 and term not in ignored_terms
+        }
+        if query_terms:
+            with self.connect() as connection:
+                operational_rows = connection.execute(
+                    """SELECT r.*, e.name AS entity_name, em.sender, em.subject AS source_subject,
+                              em.body AS source_body, d.status AS trello_status,
+                              d.external_url AS trello_card_url
+                       FROM operational_records r
+                       LEFT JOIN entities e ON e.id = r.entity_id
+                       JOIN emails em ON em.id = r.email_id
+                       LEFT JOIN integration_dispatches d
+                         ON d.operational_record_id = r.id AND d.integration = 'trello'
+                       ORDER BY r.id DESC LIMIT 200"""
+                ).fetchall()
+            ranked_records = []
+            for row in operational_rows:
+                item = dict(row)
+                searchable = " ".join(str(item.get(field) or "") for field in (
+                    "title", "owner", "notes", "next_action", "entity_name",
+                    "sender", "source_subject", "source_body",
+                )).casefold()
+                searchable_terms = set(re.findall(r"[a-z0-9]+", searchable))
+                score = len(query_terms & searchable_terms)
+                if score:
+                    ranked_records.append((score, item["id"], item))
+            ranked_records.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            existing_keys = set(evidence_keys)
+            for _, _, row in ranked_records[:10]:
+                key = f"operational_records:{row['id']}"
+                if key in existing_keys:
+                    continue
+                evidence_keys.append(key)
+                existing_keys.add(key)
+                records.append({
+                    "source_key": key,
+                    "entity": row.get("entity_name"),
+                    "record_type": "operational_records",
+                    "record": row,
+                })
+                if row.get("title") and row["title"] not in matched_record_names:
+                    matched_record_names.append(row["title"])
         return {
             "matched_entity_names": matched_names,
+            "matched_record_names": matched_record_names,
             "available_evidence_keys": evidence_keys,
             "records": records,
         }

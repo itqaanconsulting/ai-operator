@@ -136,7 +136,11 @@ The demo is successful when all of the following are true:
 - Gmail contains an invitation draft in the original email thread.
 - No email or Calendar attendee update was sent automatically.
 - The Trello card is in `Interview confirmed` and contains a result comment.
-- The candidate case shows `interview scheduled`.
+- The candidate case shows `Interview confirmed`.
+
+Finally, open **Cases**, ask `What is the status of candidate Sarah Johnson?`,
+and verify that the answer cites the matching candidate record and reports the
+current interview status and next action.
 
 For the rejection path, verify that the card remains in `Rejected`, Gmail
 contains a rejection draft, and that no message was sent.
