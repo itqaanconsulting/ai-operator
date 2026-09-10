@@ -9,6 +9,8 @@ automatically.
 
 ![AI recruitment automation with fictional demo data](docs/images/recruitment-demo-dashboard.png)
 
+![Fictional candidate pipeline and grounded AI status search](docs/images/recruitment-demo-cases.png)
+
 ## Current pilot
 
 - Analyzes manually submitted emails with OpenAI.

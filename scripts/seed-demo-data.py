@@ -83,36 +83,81 @@ def build_demo_database(path: Path) -> None:
         }},
         {"candidate_interview_package"},
     )
+    db.decide_action(
+        interview["action_id"], ActionStatus.APPROVED,
+        "Interview details confirmed in fictional demo",
+    )
+    db.claim_approved_action(interview["action_id"])
+    db.finish_action(interview["action_id"], {
+        "gmail_draft": {"provider": "gmail", "draft_id": "fictional-draft-miguel"},
+        "calendar_event": {
+            "provider": "google_calendar", "event_id": "fictional-event-miguel",
+            "attendee_updates_sent": False,
+        },
+        "email_sent": False,
+    })
 
     amina = create_candidate_record(
         db, name="Amina Yusuf", role="Automation Engineer",
         email="amina.yusuf@example.com", message_id="demo-gmail-amina",
         skills="n8n, Python, APIs, and process automation",
     )
-    db.prepare_candidate_review_action(
-        amina["id"], "hold", "Selected in fictional Trello demo"
+    amina_interview = db.prepare_candidate_review_action(
+        amina["id"], "interview", "Selected in fictional Trello demo"
+    )
+    amina_start = (datetime.now().astimezone() + timedelta(days=2)).replace(
+        hour=14, minute=30, second=0, microsecond=0
+    )
+    db.update_action_payload(
+        amina_interview["action_id"],
+        {"calendar_event": {
+            "title": "Interview - Amina Yusuf",
+            "start_at": amina_start.isoformat(),
+            "end_at": (amina_start + timedelta(minutes=30)).isoformat(),
+            "location": "Microsoft Teams",
+            "attendees": ["amina.yusuf@example.com"],
+        }},
+        {"candidate_interview_package"},
     )
 
-    _, _, sarah_action_id = db.save_analysis(
+    sarah = create_candidate_record(
+        db, name="Sarah Chen", role="Frontend Developer",
+        email="sarah.chen@example.com", message_id="demo-gmail-sarah",
+        skills="TypeScript, Angular, and accessibility",
+    )
+    db.prepare_candidate_review_action(
+        sarah["id"], "hold", "Selected in fictional Trello demo"
+    )
+
+    create_candidate_record(
+        db, name="Daniel Kim", role="Product Designer",
+        email="daniel.kim@example.com", message_id="demo-gmail-daniel",
+        skills="Figma, design systems, and user research",
+    )
+
+    _, _, noor_action_id = db.save_analysis(
         EmailRequest(
-            sender="Sarah Chen <sarah.chen@example.com>",
-            subject="Application for Frontend Developer - Sarah Chen",
-            body="I have six years of experience with TypeScript, Angular, and accessibility.",
-            gmail_msg_id="demo-gmail-sarah",
+            sender="Noor Rahman <noor.rahman@example.com>",
+            subject="Application for Data Analyst - Noor Rahman",
+            body="I have four years of experience with SQL, Python, and Power BI.",
+            gmail_msg_id="demo-gmail-noor",
         ),
         candidate_analysis(
-            "Sarah Chen", "Frontend Developer", "TypeScript, Angular, and accessibility"
+            "Noor Rahman", "Data Analyst", "SQL, Python, and Power BI"
         ),
     )
 
     run_id = db.start_automation_run("inbox_automation")
     db.finish_automation_run(run_id, {
-        "found": 3,
+        "found": 5,
         "processed": [{
-            "gmail_msg_id": "demo-gmail-sarah",
-            "action_id": sarah_action_id,
+            "gmail_msg_id": "demo-gmail-noor",
+            "action_id": noor_action_id,
         }],
-        "skipped": ["demo-gmail-miguel", "demo-gmail-amina"],
+        "skipped": [
+            "demo-gmail-miguel", "demo-gmail-amina", "demo-gmail-sarah",
+            "demo-gmail-daniel",
+        ],
         "errors": [],
         "follow_up_monitor": {"created": []},
         "open_loop_monitor": {"created": []},

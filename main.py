@@ -1,6 +1,7 @@
 import json
 import hmac
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -261,6 +262,24 @@ def suggest_candidate_interview_slots(action_id: int):
     if action["status"] not in {"pending_approval", "approved", "failed"}:
         raise HTTPException(status_code=409, detail="Interview action is already handled")
     analysis = json.loads(action.get("analysis_json") or "{}")
+    if os.getenv("SAFE_DEMO_MODE", "false").strip().casefold() in {"1", "true", "yes", "on"}:
+        payload = json.loads(action.get("payload_json") or "{}")
+        proposed_start = (payload.get("calendar_event") or {}).get("start_at")
+        start = datetime.fromisoformat(proposed_start) if proposed_start else (
+            datetime.now().astimezone() + timedelta(days=1)
+        ).replace(hour=10, minute=0, second=0, microsecond=0)
+        slots = []
+        for offset in range(3):
+            slot_start = start + timedelta(days=offset)
+            slot_end = slot_start + timedelta(minutes=30)
+            slots.append({
+                "start_at": slot_start.isoformat(),
+                "end_at": slot_end.isoformat(),
+                "label": slot_start.strftime("%a %d %b, %H:%M"),
+                "preference_match": offset == 0,
+                "reason": "Fictional demo availability",
+            })
+        return {"action_id": action_id, "duration_minutes": 30, "slots": slots}
     preference_text = " ".join(filter(None, [
         action.get("subject"), action.get("body"), analysis.get("summary"),
         analysis.get("availability_preferences"), analysis.get("proposed_action"),

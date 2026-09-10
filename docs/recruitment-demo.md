@@ -138,7 +138,7 @@ The demo is successful when all of the following are true:
 - The Trello card is in `Interview confirmed` and contains a result comment.
 - The candidate case shows `Interview confirmed`.
 
-Finally, open **Cases**, ask `What is the status of candidate Sarah Johnson?`,
+Finally, open **Cases**, ask `What is the status of candidate Miguel Santos?`,
 and verify that the answer cites the matching candidate record and reports the
 current interview status and next action.
 
@@ -153,12 +153,17 @@ people and `example.com` addresses:
 ```powershell
 .\venv\Scripts\python.exe .\scripts\seed-demo-data.py --database demo.db
 $env:DATABASE_PATH = "demo.db"
+$env:SAFE_DEMO_MODE = "true"
 .\venv\Scripts\python.exe -m uvicorn main:app --port 8001
 ```
 
-Open `http://127.0.0.1:8001/dashboard` for screenshots. The disposable
-`demo.db` file is ignored by Git and can be regenerated at any time. This avoids
-publishing real messages, addresses, tokens, Trello IDs, or operational history.
+Open `http://127.0.0.1:8001/dashboard` for the review-inbox screenshot and
+`http://127.0.0.1:8001/dashboard?view=cases` for the candidate-pipeline
+screenshot. The disposable `demo.db` file is ignored by Git and can be
+regenerated at any time. This avoids publishing real messages, addresses,
+tokens, Trello IDs, or operational history.
+`SAFE_DEMO_MODE` also prevents the screenshot server from querying the real
+Google Calendar and returns three clearly fictional availability options.
 
 ## Safety design
 

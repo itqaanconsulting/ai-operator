@@ -236,7 +236,10 @@ function renderOperationalRecords() {
 }
 
 function renderCandidateReviews() {
-  const candidates = state.operationalRecords.filter(record => record.record_type === "candidate_review");
+  const statusOrder = { interview_pending: 0, interview_scheduled: 1, open: 2, on_hold: 3, rejection_pending: 4, rejection_drafted: 5 };
+  const candidates = state.operationalRecords
+    .filter(record => record.record_type === "candidate_review")
+    .sort((left, right) => (statusOrder[left.status] ?? 99) - (statusOrder[right.status] ?? 99));
   const statusLabels = {
     open: "New application",
     interview_pending: "Schedule interview",
@@ -872,5 +875,6 @@ document.querySelector("#gmail-import-button")?.addEventListener("click", import
 document.querySelector("#inbox-schedule-toggle").addEventListener("click", toggleInboxSchedule);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
-switchView("documents");
+const requestedView = new URLSearchParams(window.location.search).get("view");
+switchView(["documents", "cases"].includes(requestedView) ? requestedView : "documents");
 refresh();

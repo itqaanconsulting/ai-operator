@@ -97,6 +97,35 @@ class OperationalActionTest(unittest.TestCase):
         self.assertIn('"attendees": [', next_action["payload_json"])
         self.assertEqual(commitment["status"], "open")
 
+    def test_candidate_follow_up_survives_database_restart_after_intake_is_complete(self):
+        _, commitment_id, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application for Engineer", body="Amina applied."),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Amina applied.", contact_name="Amina",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review Amina for Engineer",
+                    proposed_action="Create a candidate review.", owner="Recruiting",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "interview")
+
+        with main.database.connect() as connection:
+            connection.execute(
+                "UPDATE commitments SET status = 'completed' WHERE id = ?", (commitment_id,)
+            )
+        restarted_database = Database(main.database.path)
+        restarted_database.init()
+        follow_up = next(
+            row for row in restarted_database.list_rows("proposed_actions")
+            if row["id"] == prepared["action_id"]
+        )
+
+        self.assertEqual(follow_up["status"], ActionStatus.PENDING_APPROVAL.value)
+
     def test_candidate_can_remain_under_review_without_external_action(self):
         _, _, action_id = main.database.save_analysis(
             EmailRequest(subject="Application", body="Candidate applied."),
@@ -140,6 +169,7 @@ class OperationalActionTest(unittest.TestCase):
         self.assertNotEqual(retried["action_id"], first["action_id"])
         self.assertEqual(retried["status"], "interview_pending")
 
+    @patch.dict(main.os.environ, {"SAFE_DEMO_MODE": "false"})
     @patch("main.CalendarOperator.suggest_interview_slots")
     @patch("main.get_calendar_service")
     def test_candidate_interview_slot_endpoint_uses_ai_availability(
@@ -168,6 +198,39 @@ class OperationalActionTest(unittest.TestCase):
 
         self.assertEqual(len(result["slots"]), 1)
         self.assertIn("Tuesday afternoon", suggest_slots.call_args.kwargs["preference_text"])
+
+    @patch.dict(main.os.environ, {"SAFE_DEMO_MODE": "true"})
+    @patch("main.get_calendar_service")
+    def test_candidate_interview_slots_are_fictional_in_safe_demo_mode(
+        self, calendar_service
+    ):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application", body="Candidate applied."),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Amina applied.", contact_name="Amina",
+                work_items=[EmailWorkItem(kind="job_application", title="Review Amina",
+                                          proposed_action="Create candidate review.")],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "interview")
+        main.database.update_action_payload(
+            prepared["action_id"],
+            {"calendar_event": {
+                "title": "Interview - Amina",
+                "start_at": "2030-09-17T14:30:00+02:00",
+                "end_at": "2030-09-17T15:00:00+02:00",
+            }},
+            {"candidate_interview_package"},
+        )
+
+        result = main.suggest_candidate_interview_slots(prepared["action_id"])
+
+        self.assertEqual(len(result["slots"]), 3)
+        self.assertEqual(result["slots"][0]["reason"], "Fictional demo availability")
+        calendar_service.assert_not_called()
 
     @patch("main.CalendarOperator.create_event")
     @patch("main.GmailOperator.create_reply_draft")

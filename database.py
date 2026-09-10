@@ -366,7 +366,9 @@ class Database:
                 """UPDATE proposed_actions SET status = 'rejected',
                           decision_note = 'Closed because the linked work item is complete.',
                           decided_at = CURRENT_TIMESTAMP
-                   WHERE status = 'pending_approval' AND commitment_id IN (
+                   WHERE status = 'pending_approval'
+                     AND json_extract(payload_json, '$.candidate_review_id') IS NULL
+                     AND commitment_id IN (
                        SELECT id FROM commitments WHERE status = 'completed'
                    )"""
             )
