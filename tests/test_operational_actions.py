@@ -187,6 +187,8 @@ class OperationalActionTest(unittest.TestCase):
         self.assertEqual(package["status"], "draft")
         self.assertIn("DRAFT — FOR HR AND LEGAL REVIEW ONLY", package["contract_draft"])
         self.assertIn("Example Operations B.V.", package["contract_draft"])
+        self.assertIn("1. PARTIES", package["contract_draft"])
+        self.assertIn("4. TERMS TO BE COMPLETED BY HR AND LEGAL", package["contract_draft"])
 
     def test_trello_recreates_missing_interview_approval_for_pending_candidate(self):
         _, _, action_id = main.database.save_analysis(

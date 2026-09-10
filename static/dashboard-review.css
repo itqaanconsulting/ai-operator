@@ -55,6 +55,19 @@
 .candidate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--line); }
 .candidate-next { margin-top: 16px; padding: 11px 12px; border-radius: 8px; background: #f5f6f5; }
 .candidate-next.success { color: var(--primary); background: var(--soft); }
+.candidate-next-step { display: grid; gap: 14px; padding: 16px; margin-top: 16px; border: 1px solid #cfe0da; border-radius: 10px; background: #f7faf9; }
+.candidate-step-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.candidate-step-heading span:first-child { color: var(--primary); font-family: ui-monospace,"Cascadia Code",monospace; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.candidate-step-heading h4 { margin: 4px 0 0; font-size: 18px; }
+.candidate-form { display: grid; gap: 9px; }
+.candidate-form input,.candidate-form textarea,.candidate-form select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: #fff; font: inherit; font-size: 14px; }
+.candidate-form textarea { min-height: 120px; resize: vertical; }
+.candidate-action-error { padding: 10px 12px; border-radius: 8px; color: var(--danger)!important; background: #f9eded; }
+.contract-dialog { width: min(940px,calc(100% - 32px)); height: min(800px,calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 24px 80px rgba(24,33,30,.22); }
+.contract-dialog::backdrop { background: rgba(24,33,30,.5); }
+.contract-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.contract-dialog-heading h2 { font-size: 19px; }
+.contract-dialog iframe { width: 100%; height: calc(100% - 78px); border: 0; background: #fff; }
 .date-time-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .date-time-field input { width: 100%; color: var(--ink); font: inherit; font-weight: 400; }
 .slot-suggestions { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--soft); }
@@ -68,7 +81,7 @@
 .memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .memory-heading h2 { font-size: 17px; }
 .memory-heading p { margin-top: 3px; color: var(--muted); font-size: 13px; }
-@media (max-width: 560px) { .inbox-summary { grid-template-columns: 1fr; } .work-group-header, .finding-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
+@media (max-width: 560px) { .inbox-summary { grid-template-columns: 1fr; } .work-group-header, .finding-heading,.candidate-step-heading { align-items: flex-start; flex-direction: column; } .email-subject { font-size: 21px; } .finding-heading h4 { font-size: 18px; } .work-item { padding-left: 24px; } .work-item::before { left: 12px; } }
 .candidate-status-search {
   margin: 0 0 1rem;
   border: 1px solid var(--line);

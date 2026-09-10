@@ -32,6 +32,9 @@ automatically.
 - Treats a Trello move to **Hired** as a separate HR decision. It prepares one
   approval-gated onboarding form, then creates an internal employee record and
   a clearly marked draft employment agreement. Nothing is sent or signed.
+- Keeps interview, rejection, onboarding and contract review on the relevant
+  candidate card in one dashboard workspace; the general inbox no longer
+  duplicates HR follow-up actions.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
 - Provides an authenticated n8n schedule entry point for proactive Gmail intake;

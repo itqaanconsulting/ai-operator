@@ -4,6 +4,7 @@ const state = {
   contractSchedule: null, inboxSchedule: null, automationRuns: [], reviewQueue: [], workQueue: [],
   operationalRecords: [],
   focusEmailId: null,
+  initialViewResolved: false,
 };
 
 const elements = {
@@ -167,10 +168,9 @@ function renderCommitments() {
         </article>`;
   }).join("")}
     </details>`).join("");
-  elements.commitments.innerHTML = state.workQueue.length ? `
-    ${readyGroups.length ? `<section class="queue-section"><div class="queue-section-heading"><h3>Ready to finish</h3><span>${readyGroups.length} decision${readyGroups.length === 1 ? "" : "s"} from Trello</span></div>${renderGroups(readyGroups, true)}</section>` : ""}
+  elements.commitments.innerHTML = newGroups.length || earlierGroups.length ? `
     <section class="queue-section"><div class="queue-section-heading"><h3>New from latest scan</h3><span>${newGroups.length} email${newGroups.length === 1 ? "" : "s"}</span></div>${newGroups.length ? renderGroups(newGroups, true) : '<p class="queue-empty">No new email findings in the latest scan.</p>'}</section>
-    <section class="queue-section"><div class="queue-section-heading"><h3>Earlier open work</h3><span>${earlierGroups.length} email${earlierGroups.length === 1 ? "" : "s"}</span></div>${earlierGroups.length ? renderGroups(earlierGroups, false) : '<p class="queue-empty">No earlier work is still open.</p>'}</section>` : '<p class="empty-state">No work needs attention.</p>';
+    <section class="queue-section"><div class="queue-section-heading"><h3>Earlier open work</h3><span>${earlierGroups.length} email${earlierGroups.length === 1 ? "" : "s"}</span></div>${earlierGroups.length ? renderGroups(earlierGroups, false) : '<p class="queue-empty">No earlier work is still open.</p>'}</section>` : '<p class="empty-state">No non-HR work needs attention. Candidate actions are shown in Candidates.</p>';
   elements.commitments.querySelectorAll("[data-complete]").forEach(button => {
     button.addEventListener("click", () => completeCommitment(button.dataset.complete));
   });
@@ -202,8 +202,8 @@ async function loadInterviewSlots(id, container) {
       </button>`).join("")}</div>`;
     container.querySelectorAll("[data-slot-start]").forEach(button => {
       button.addEventListener("click", () => {
-        elements.commitments.querySelector(`[data-event-start="${id}"]`).value = dateTimeLocalValue(button.dataset.slotStart);
-        elements.commitments.querySelector(`[data-event-end="${id}"]`).value = dateTimeLocalValue(button.dataset.slotEnd);
+        document.querySelector(`[data-event-start="${id}"]`).value = dateTimeLocalValue(button.dataset.slotStart);
+        document.querySelector(`[data-event-end="${id}"]`).value = dateTimeLocalValue(button.dataset.slotEnd);
         container.querySelectorAll(".slot-button").forEach(item => item.classList.toggle("selected", item === button));
       });
     });
@@ -242,6 +242,61 @@ function renderOperationalRecords() {
   });
 }
 
+function candidateActionFor(recordId) {
+  return state.actions
+    .filter(action => String(parseJson(action.payload_json).candidate_review_id) === String(recordId)
+      && ["pending_approval", "approved", "failed"].includes(action.status))
+    .sort((left, right) => Number(right.id) - Number(left.id))[0] || null;
+}
+
+function candidateNextStep(record) {
+  const action = candidateActionFor(record.id);
+  if (!action) return "";
+  const payload = parseJson(action.payload_json);
+  const event = payload.calendar_event || {};
+  const onboarding = payload.onboarding || {};
+  const failed = action.status === "failed"
+    ? `<p class="candidate-action-error">The previous attempt failed: ${escapeHtml(action.error_message || "unknown error")}. Review the details and retry.</p>`
+    : "";
+  if (action.action_type === "candidate_interview_package") return `
+    <section class="candidate-next-step">
+      <div class="candidate-step-heading"><div><span>NEXT STEP</span><h4>Schedule the interview</h4></div><span class="pill pending_approval">Needs confirmation</span></div>
+      ${failed}<div class="candidate-form calendar-editor-grid">
+        <div class="wide slot-suggestions" data-interview-slots="${action.id}"><span>Checking your calendar for suitable times…</span></div>
+        <input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || record.title)}" placeholder="Interview title">
+        <label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label>
+        <label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label>
+        <input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location or meeting link">
+        <input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails">
+        <input class="wide" data-package-subject="${action.id}" value="${escapeHtml(payload.draft_subject || "Interview invitation")}" aria-label="Email subject">
+        <textarea class="wide" data-package-body="${action.id}" aria-label="Invitation email">${escapeHtml(payload.suggested_reply || "")}</textarea>
+      </div><button class="button approve" data-schedule-interview="${action.id}">Create Calendar event and Gmail draft</button>
+    </section>`;
+  if (action.action_type === "create_onboarding_package") return `
+    <section class="candidate-next-step">
+      <div class="candidate-step-heading"><div><span>NEXT STEP</span><h4>Complete onboarding</h4></div><span class="pill pending_approval">Needs confirmation</span></div>
+      ${failed}<div class="candidate-form calendar-editor-grid">
+        <input class="wide" data-onboarding-name="${action.id}" value="${escapeHtml(onboarding.employee_name || "")}" placeholder="Employee name" required>
+        <input class="wide" type="email" data-onboarding-email="${action.id}" value="${escapeHtml(onboarding.personal_email || "")}" placeholder="Personal email" required>
+        <input class="wide" data-onboarding-role="${action.id}" value="${escapeHtml(onboarding.job_title || "")}" placeholder="Job title" required>
+        <label class="date-time-field"><span>Start date</span><input type="date" data-onboarding-start="${action.id}" value="${escapeHtml(onboarding.start_date || "")}" required></label>
+        <label class="date-time-field"><span>Employment type</span><select data-onboarding-type="${action.id}"><option value="permanent" ${onboarding.employment_type === "permanent" ? "selected" : ""}>Permanent</option><option value="fixed_term" ${onboarding.employment_type === "fixed_term" ? "selected" : ""}>Fixed term</option><option value="contractor" ${onboarding.employment_type === "contractor" ? "selected" : ""}>Contractor</option></select></label>
+        <input class="wide" data-onboarding-entity="${action.id}" value="${escapeHtml(onboarding.legal_entity || "")}" placeholder="Legal employer name" required>
+        <input data-onboarding-manager="${action.id}" value="${escapeHtml(onboarding.manager || "")}" placeholder="Manager (optional)">
+        <input data-onboarding-location="${action.id}" value="${escapeHtml(onboarding.work_location || "")}" placeholder="Work location (optional)">
+        <label class="date-time-field"><span>Hours per week</span><input type="number" min="1" max="80" step="0.5" data-onboarding-hours="${action.id}" value="${escapeHtml(onboarding.hours_per_week || 40)}"></label>
+      </div><p class="supporting-copy">Creates an internal employee record and draft agreement. Nothing is signed or sent.</p>
+      <button class="button approve" data-create-onboarding="${action.id}">Create employee record and draft contract</button>
+    </section>`;
+  if (action.action_type === "draft_reply") return `
+    <section class="candidate-next-step">
+      <div class="candidate-step-heading"><div><span>NEXT STEP</span><h4>Prepare rejection</h4></div><span class="pill pending_approval">Needs confirmation</span></div>
+      ${failed}<div class="candidate-form"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${record.source_subject || record.title}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply || "")}</textarea></div>
+      <button class="button approve" data-create-rejection-draft="${action.id}">Create Gmail draft</button>
+    </section>`;
+  return "";
+}
+
 function renderCandidateReviews() {
   const statusOrder = { onboarding_pending: 0, hired: 1, interview_pending: 2, interview_scheduled: 3, open: 4, on_hold: 5, rejection_pending: 6, rejection_drafted: 7 };
   const candidates = state.operationalRecords
@@ -264,11 +319,9 @@ function renderCandidateReviews() {
       <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
       <p>${escapeHtml(record.notes || record.next_action)}</p>
       ${record.trello_status === "completed"
-        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.onboarding_package_id ? `<a class="button secondary" href="/onboarding-packages/${record.onboarding_package_id}/contract" target="_blank" rel="noopener">View draft contract</a>` : ""}${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Hired, Rejected, or On hold.</span>' : ""}</div>`
+        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.onboarding_package_id ? `<button class="button primary" type="button" data-view-contract="${record.onboarding_package_id}">View draft contract</button>` : ""}${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Hired, Rejected, or On hold.</span>' : ""}</div>`
         : `<div class="candidate-actions"><button class="button primary" data-send-candidate-trello="${record.id}">${record.trello_status === "failed" ? "Retry hiring board" : "Send to hiring board"}</button></div>`}
-      ${record.status === "interview_pending" ? '<p class="candidate-next">Trello decision received. Choose a time and confirm execution in Review inbox.</p>' : ""}
-      ${record.status === "rejection_pending" ? '<p class="candidate-next">Trello decision received. Review the rejection email in Review inbox.</p>' : ""}
-      ${record.status === "onboarding_pending" ? '<p class="candidate-next">Hire decision received. Complete the employee details in Review inbox.</p>' : ""}
+      ${candidateNextStep(record)}
       ${record.status === "on_hold" ? '<p class="candidate-next">Candidate is on hold. No external action was created.</p>' : ""}
       ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
       ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
@@ -277,6 +330,11 @@ function renderCandidateReviews() {
   elements.candidateReviews.querySelectorAll("[data-send-candidate-trello]").forEach(button => {
     button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendCandidateTrello));
   });
+  elements.candidateReviews.querySelectorAll("[data-schedule-interview]").forEach(button => button.addEventListener("click", () => scheduleInterview(button.dataset.scheduleInterview, button)));
+  elements.candidateReviews.querySelectorAll("[data-create-onboarding]").forEach(button => button.addEventListener("click", () => createOnboardingPackage(button.dataset.createOnboarding, button)));
+  elements.candidateReviews.querySelectorAll("[data-create-rejection-draft]").forEach(button => button.addEventListener("click", () => createCandidateRejectionDraft(button.dataset.createRejectionDraft, button)));
+  elements.candidateReviews.querySelectorAll("[data-interview-slots]").forEach(container => void loadInterviewSlots(container.dataset.interviewSlots, container));
+  elements.candidateReviews.querySelectorAll("[data-view-contract]").forEach(button => button.addEventListener("click", () => openContract(button.dataset.viewContract)));
 }
 
 async function sendRecordToTrello(id) {
@@ -294,11 +352,16 @@ function updateMetrics() {
   document.querySelector("#approval-count").textContent = state.actions.filter(a => a.status === "pending_approval").length;
   document.querySelector("#overdue-count").textContent = state.commitments.filter(c => deadlineState(c.deadline) === "overdue").length;
   document.querySelector("#document-count").textContent = state.documents.length;
-  const actionable = state.commitments.filter(c => c.status !== "completed").length;
+  const candidateCommitmentIds = new Set(state.actions
+    .filter(action => Boolean(parseJson(action.payload_json).candidate_review_id))
+    .map(action => String(action.commitment_id)));
+  const actionable = state.commitments.filter(c => c.status !== "completed"
+    && !candidateCommitmentIds.has(String(c.id))).length;
   const count = document.querySelector("#review-count");
   if (count) count.textContent = `${actionable} open finding${actionable === 1 ? "" : "s"}`;
   document.querySelector("#open-work-count").textContent = actionable;
-  const emailCount = state.workQueue.length;
+  const emailCount = state.workQueue.filter(group => group.commitments.some(commitment =>
+    !candidateCommitmentIds.has(String(commitment.id)))).length;
   document.querySelector("#open-email-count").textContent = `From ${emailCount} email${emailCount === 1 ? "" : "s"}`;
 }
 
@@ -429,6 +492,15 @@ async function refresh() {
     renderAutomationRuns();
     renderLatestInboxRun();
     renderReviewQueue();
+    if (!state.initialViewResolved) {
+      const requestedView = new URLSearchParams(window.location.search).get("view");
+      const candidateNeedsAttention = state.actions.some(action =>
+        Boolean(parseJson(action.payload_json).candidate_review_id)
+        && ["pending_approval", "approved", "failed"].includes(action.status));
+      switchView(["documents", "cases"].includes(requestedView)
+        ? requestedView : candidateNeedsAttention ? "cases" : "documents");
+      state.initialViewResolved = true;
+    }
   } catch (error) { notify(error.message, true); }
   finally { document.body.classList.remove("loading"); }
 }
@@ -598,12 +670,12 @@ async function saveCalendarProposal(id) {
 }
 
 async function scheduleInterview(id, button) {
-  const value = name => elements.commitments.querySelector(`[data-event-${name}="${id}"]`).value.trim();
+  const value = name => document.querySelector(`[data-event-${name}="${id}"]`).value.trim();
   const attendees = value("attendees").split(",").map(item => item.trim()).filter(Boolean);
   const body = {
     calendar_event: { title: value("title"), start_at: value("start"), end_at: value("end") || null, location: value("location") || null, attendees },
-    email_subject: elements.commitments.querySelector(`[data-package-subject="${id}"]`).value.trim(),
-    email_body: elements.commitments.querySelector(`[data-package-body="${id}"]`).value.trim(),
+    email_subject: document.querySelector(`[data-package-subject="${id}"]`).value.trim(),
+    email_body: document.querySelector(`[data-package-body="${id}"]`).value.trim(),
   };
   if (!body.calendar_event.title || !body.calendar_event.start_at || !body.email_subject || !body.email_body) {
     notify("Choose a start time and complete the interview title and email.", true);
@@ -627,7 +699,7 @@ async function scheduleInterview(id, button) {
 }
 
 async function createOnboardingPackage(id, button) {
-  const value = name => elements.commitments.querySelector(`[data-onboarding-${name}="${id}"]`).value.trim();
+  const value = name => document.querySelector(`[data-onboarding-${name}="${id}"]`).value.trim();
   const body = {
     employee_name: value("name"), personal_email: value("email"), job_title: value("role"),
     start_date: value("start"), employment_type: value("type"), legal_entity: value("entity"),
@@ -656,8 +728,8 @@ async function createOnboardingPackage(id, button) {
 }
 
 async function createCandidateRejectionDraft(id, button) {
-  const subject = elements.commitments.querySelector(`[data-draft-subject="${id}"]`).value.trim();
-  const body = elements.commitments.querySelector(`[data-draft-body="${id}"]`).value.trim();
+  const subject = document.querySelector(`[data-draft-subject="${id}"]`).value.trim();
+  const body = document.querySelector(`[data-draft-body="${id}"]`).value.trim();
   if (!subject || !body) {
     notify("Complete the rejection email subject and message.", true);
     return;
@@ -899,6 +971,18 @@ async function executeRevisionDelivery(id) {
   catch (error) { notify(error.message, true); }
 }
 
+function openContract(packageId) {
+  const dialog = document.querySelector("#contract-dialog");
+  document.querySelector("#contract-frame").src = `/onboarding-packages/${packageId}/contract`;
+  dialog.showModal();
+}
+
+function closeContract() {
+  const dialog = document.querySelector("#contract-dialog");
+  dialog.close();
+  document.querySelector("#contract-frame").src = "about:blank";
+}
+
 function switchView(view) {
   document.querySelectorAll(".app-view").forEach(section => { section.hidden = !section.id.startsWith(view); });
   document.querySelectorAll(".view-tab").forEach(button => button.classList.toggle("active", button.dataset.view === view));
@@ -914,6 +998,10 @@ document.querySelector("#gmail-attachments-button").addEventListener("click", im
 document.querySelector("#gmail-import-button")?.addEventListener("click", importGmail);
 document.querySelector("#inbox-schedule-toggle").addEventListener("click", toggleInboxSchedule);
 document.querySelector("#schedule-toggle-button").addEventListener("click", toggleSchedule);
+document.querySelector("#contract-dialog-close").addEventListener("click", closeContract);
+document.querySelector("#contract-dialog").addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeContract();
+});
 document.querySelectorAll(".view-tab").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
 const requestedView = new URLSearchParams(window.location.search).get("view");
 switchView(["documents", "cases"].includes(requestedView) ? requestedView : "documents");

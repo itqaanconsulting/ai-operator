@@ -65,7 +65,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.40.1-dev")
+app = FastAPI(title="AI Commitment Operator", version="0.41.0-dev")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -277,22 +277,42 @@ def build_contract_draft(proposal: CandidateOnboardingPackageUpdateRequest) -> s
 
 EMPLOYMENT AGREEMENT
 
-Employer: {proposal.legal_entity}
-Employee: {proposal.employee_name}
-Personal email: {proposal.personal_email}
-Position: {proposal.job_title}
-Start date: {proposal.start_date}
-Employment type: {employment_type}
-Hours per week: {proposal.hours_per_week:g}
-Manager: {proposal.manager or '[to be confirmed]'}
-Work location: {proposal.work_location or '[to be confirmed]'}
+1. PARTIES
 
-This document is an automatically prepared concept record. Compensation,
-probation, leave, notice, confidentiality, intellectual-property terms and all
-other legally required clauses must be supplied and approved by authorised HR
-and legal reviewers before signature.
+Employer: {proposal.legal_entity} (the “Employer”)
+Employee: {proposal.employee_name} (the “Employee”)
+Employee contact: {proposal.personal_email}
 
-No signature requested. Nothing has been sent to the candidate.
+2. APPOINTMENT
+
+The Employer intends to appoint the Employee as {proposal.job_title}, reporting
+to {proposal.manager or '[manager to be confirmed]'}. The intended start date is
+{proposal.start_date} and the proposed employment type is {employment_type}.
+
+3. WORKING ARRANGEMENTS
+
+Normal working time: {proposal.hours_per_week:g} hours per week
+Primary work location: {proposal.work_location or '[work location to be confirmed]'}
+
+4. TERMS TO BE COMPLETED BY HR AND LEGAL
+
+- Salary, payment frequency and benefits
+- Probation period and termination provisions
+- Holiday, leave and absence arrangements
+- Confidentiality, data protection and intellectual-property provisions
+- Governing law, applicable collective agreements and mandatory local clauses
+
+5. REVIEW AND SIGNATURE
+
+This draft records the approved hiring and onboarding details only. It does not
+create an employment relationship and must not be offered for signature until
+authorised HR and legal reviewers have completed and approved every required term.
+
+For the Employer: ____________________    Date: _______________
+
+Employee: ____________________________    Date: _______________
+
+AUTOMATION STATUS: No signature requested. Nothing has been sent to the candidate.
 """
 
 
@@ -1016,7 +1036,14 @@ def view_onboarding_contract(package_id: int):
     package = database.get_onboarding_package(package_id)
     if package is None:
         raise HTTPException(status_code=404, detail="Onboarding package was not found")
-    draft = html.escape(package["contract_draft"])
+    current_draft = build_contract_draft(CandidateOnboardingPackageUpdateRequest(
+        employee_name=package["employee_name"], personal_email=package["personal_email"],
+        job_title=package["job_title"], start_date=package["start_date"],
+        employment_type=package["employment_type"], legal_entity=package["legal_entity"],
+        manager=package.get("manager"), work_location=package.get("work_location"),
+        hours_per_week=package["hours_per_week"],
+    ))
+    draft = html.escape(current_draft)
     return HTMLResponse(
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"

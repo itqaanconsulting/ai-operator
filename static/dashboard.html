@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Operator</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=0.40.1">
-  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.40.1">
-  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.40.1">
+  <link rel="stylesheet" href="/static/dashboard.css?v=0.41.0">
+  <link rel="stylesheet" href="/static/dashboard-focus.css?v=0.41.0">
+  <link rel="stylesheet" href="/static/dashboard-review.css?v=0.41.0">
 </head>
 <body>
   <header class="topbar">
@@ -15,7 +15,7 @@
   </header>
   <nav class="view-tabs" aria-label="Operator workspace">
     <button class="view-tab active" data-view="documents">Review inbox</button>
-    <button class="view-tab" data-view="cases">Cases</button>
+    <button class="view-tab" data-view="cases">Candidates</button>
   </nav>
   <main>
     <div id="notification" class="notification" role="status" hidden></div>
@@ -49,10 +49,10 @@
       </details>
     </section>
     <section id="cases-view" class="app-view candidates-view" hidden>
-      <header class="page-heading"><div><p class="section-label">Hiring workflow</p><h2>Candidate cases</h2><p>Send to the board, choose the outcome in Trello, then complete only the required details.</p></div></header>
+      <header class="page-heading"><div><p class="section-label">One hiring workspace</p><h2>Candidates</h2><p>Email intake happens automatically. Choose the status in Trello, then complete the next step on the candidate card below.</p></div><a class="button secondary" href="https://trello.com/b/omBdOlzg/ai-inbox" target="_blank" rel="noopener">Open hiring board</a></header>
       <details class="ask-operator candidate-status-search" open><summary>Ask AI about a candidate or project</summary><div class="ask-body"><form id="operator-question-form"><input id="operator-question" type="text" minlength="3" maxlength="1000" placeholder="What is the status of candidate Miguel Santos?" required><button class="button primary" type="submit">Ask AI</button></form><div id="operator-answer" hidden></div></div></details>
       <section class="review-panel">
-        <div class="review-heading"><div><h2>Candidate pipeline</h2><p>1. Hiring board &nbsp;→&nbsp; 2. Trello decision &nbsp;→&nbsp; 3. Complete details</p></div><span id="candidate-count" class="count-badge">0 candidates</span></div>
+        <div class="review-heading"><div><h2>Candidate pipeline</h2><p>Trello status → required action → result, together on each candidate card.</p></div><span id="candidate-count" class="count-badge">0 candidates</span></div>
         <div id="candidate-reviews" class="candidate-list"></div>
       </section>
       <details class="more-panel business-memory">
@@ -73,7 +73,11 @@
       </details>
     </section>
   </main>
+  <dialog id="contract-dialog" class="contract-dialog">
+    <div class="contract-dialog-heading"><div><p class="section-label">Employee document</p><h2>Draft employment agreement</h2></div><button id="contract-dialog-close" class="button secondary" type="button">Close</button></div>
+    <iframe id="contract-frame" title="Draft employment agreement"></iframe>
+  </dialog>
   <template id="empty-template"><p class="empty-state">Nothing to show.</p></template>
-  <script src="/static/dashboard.js?v=0.40.1" defer></script>
+  <script src="/static/dashboard.js?v=0.41.0" defer></script>
 </body>
 </html>

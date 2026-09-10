@@ -156,13 +156,15 @@ contains a rejection draft, and that no message was sent.
 
 ### 6. Complete the hire path
 
-After an interview, move the card to `Hired`. Within two minutes, **Ready to
-finish** asks only for the missing employment details: start date, employment
-type, legal employer, manager, location, and weekly hours. Select **Create
-employee record and draft contract** once.
+After an interview, move the card to `Hired`. Within two minutes, the candidate
+card in the dashboard's **Candidates** workspace asks only for the missing
+employment details: start date, employment type, legal employer, manager,
+location, and weekly hours. Select **Create employee record and draft contract**
+once. HR follow-up work is kept out of the general review inbox so it is not
+duplicated across dashboard views.
 
-The candidate case then shows `Hired — onboarding ready` and exposes **View
-draft contract**. The draft is stored as an internal HRIS staging record and is
+The candidate card then shows `Hired — onboarding ready` and exposes **View
+draft contract** in an in-dashboard document viewer. The draft is stored as an internal HRIS staging record and is
 explicitly incomplete: compensation and jurisdiction-specific clauses must be
 added and approved by authorised HR/legal reviewers. No signature is requested
 and nothing is sent to the candidate.
