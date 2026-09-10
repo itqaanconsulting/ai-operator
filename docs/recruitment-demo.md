@@ -14,8 +14,9 @@ multiple business systems, and keep a human in control of consequential actions.
 A candidate applies by email. The system extracts the relevant information,
 creates a candidate card, and waits for a recruiter to choose the next step in
 Trello. An interview decision produces one short completion form. Scheduling it
-creates both a Calendar event and an unsent Gmail draft, then records the result
-on the Trello card.
+creates both a Calendar event and an unsent Gmail draft. A later `Hired` decision
+produces a controlled onboarding form, internal employee record, and draft
+employment agreement. Results remain traceable to the Trello card.
 
 ```mermaid
 sequenceDiagram
@@ -42,6 +43,11 @@ sequenceDiagram
     AI->>Gmail: Creates unsent reply draft
     AI->>n8n: Reports execution result
     n8n->>Trello: Adds result comment
+    Recruiter->>Trello: Moves card to Hired
+    n8n->>AI: Requests onboarding package
+    AI->>Recruiter: Requests missing employment details
+    Recruiter->>AI: Confirms onboarding details
+    AI->>AI: Creates employee record and draft contract
 ```
 
 ## What this demonstrates
@@ -54,6 +60,8 @@ sequenceDiagram
 - Human control at the business decision and execution-detail boundaries.
 - Audit history and safe retries when an integration is temporarily unavailable.
 - No automatic email sending.
+- A safe HRIS staging boundary: legal terms are template-controlled and the
+  generated agreement is always marked as a draft for HR/legal review.
 
 ## Prerequisites
 
@@ -110,6 +118,7 @@ dispatches the structured record through n8n to Trello.
 Open the Trello board and move the candidate card from `New applications` to one of:
 
 - `Schedule interview` to prepare scheduling and an invitation draft.
+- `Hired` to prepare an employee record and draft contract.
 - `Rejected` to prepare a rejection draft.
 - `On hold` to record the status without creating an external action.
 
@@ -144,6 +153,23 @@ current interview status and next action.
 
 For the rejection path, verify that the card remains in `Rejected`, Gmail
 contains a rejection draft, and that no message was sent.
+
+### 6. Complete the hire path
+
+After an interview, move the card to `Hired`. Within two minutes, **Ready to
+finish** asks only for the missing employment details: start date, employment
+type, legal employer, manager, location, and weekly hours. Select **Create
+employee record and draft contract** once.
+
+The candidate case then shows `Hired — onboarding ready` and exposes **View
+draft contract**. The draft is stored as an internal HRIS staging record and is
+explicitly incomplete: compensation and jurisdiction-specific clauses must be
+added and approved by authorised HR/legal reviewers. No signature is requested
+and nothing is sent to the candidate.
+
+This boundary is intentionally vendor-neutral. A production implementation can
+dispatch the same validated onboarding payload to Frappe HR, OrangeHRM, or a
+customer-specific HRIS without changing the Gmail/Trello decision flow.
 
 ## Create a safe screenshot environment
 

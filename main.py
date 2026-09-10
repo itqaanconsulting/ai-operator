@@ -1,12 +1,13 @@
 import json
 import hmac
+import html
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from analyzer import EmailAnalyzer
@@ -55,6 +56,7 @@ from models import (
     OperationalRecordProposal,
     CandidateReviewDecisionRequest,
     CandidateInterviewPackageUpdateRequest,
+    CandidateOnboardingPackageUpdateRequest,
     TrelloCandidateStatusRequest,
 )
 from open_loops import OpenLoopMonitor
@@ -135,6 +137,8 @@ def health():
         "calendar_write_requires_action_approval": True,
         "candidate_calendar_availability_enabled": True,
         "candidate_trello_completion_sync_enabled": True,
+        "candidate_onboarding_enabled": True,
+        "contract_draft_requires_hr_legal_review": True,
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
@@ -252,6 +256,44 @@ def update_candidate_interview_package(
     if action is None:
         raise HTTPException(status_code=409, detail="Editable interview package was not found")
     return action
+
+
+@app.put("/actions/{action_id}/candidate-onboarding-package")
+def update_candidate_onboarding_package(
+    action_id: int, request: CandidateOnboardingPackageUpdateRequest
+):
+    action = database.update_action_payload(
+        action_id, {"onboarding": request.model_dump()}, {"create_onboarding_package"},
+        allow_failed_retry=True,
+    )
+    if action is None:
+        raise HTTPException(status_code=409, detail="Editable onboarding package was not found")
+    return action
+
+
+def build_contract_draft(proposal: CandidateOnboardingPackageUpdateRequest) -> str:
+    employment_type = proposal.employment_type.replace("_", " ").title()
+    return f"""DRAFT — FOR HR AND LEGAL REVIEW ONLY
+
+EMPLOYMENT AGREEMENT
+
+Employer: {proposal.legal_entity}
+Employee: {proposal.employee_name}
+Personal email: {proposal.personal_email}
+Position: {proposal.job_title}
+Start date: {proposal.start_date}
+Employment type: {employment_type}
+Hours per week: {proposal.hours_per_week:g}
+Manager: {proposal.manager or '[to be confirmed]'}
+Work location: {proposal.work_location or '[to be confirmed]'}
+
+This document is an automatically prepared concept record. Compensation,
+probation, leave, notice, confidentiality, intellectual-property terms and all
+other legally required clauses must be supplied and approved by authorised HR
+and legal reviewers before signature.
+
+No signature requested. Nothing has been sent to the candidate.
+"""
 
 
 @app.get("/actions/{action_id}/interview-slots")
@@ -870,6 +912,20 @@ def execute_action(action_id: int):
                 raise
             result = {"gmail_draft": draft_result, "calendar_event": calendar_result,
                       "email_sent": False}
+        elif action["action_type"] == "create_onboarding_package":
+            payload = json.loads(action.get("payload_json") or "{}")
+            proposal = CandidateOnboardingPackageUpdateRequest.model_validate(
+                payload.get("onboarding") or {}
+            )
+            package = database.create_onboarding_package(
+                action, proposal.model_dump(), build_contract_draft(proposal)
+            )
+            result = {
+                "onboarding_package_id": package["id"],
+                "employee_record_created": True,
+                "contract_draft_created": True,
+                "contract_sent": False,
+            }
         elif action["action_type"] == "record_decision":
             if not action.get("entity_id"):
                 raise ValueError("Decision is not linked to a company or project")
@@ -918,8 +974,18 @@ def execute_action(action_id: int):
                 sync_payload = {
                     "record_id": candidate_review_id,
                     "card_id": trello["external_id"],
-                    "status": "interview_scheduled" if action["action_type"] == "candidate_interview_package" else "rejection_drafted",
-                    "message": "Interview appointment and Gmail draft created." if action["action_type"] == "candidate_interview_package" else "Rejection Gmail draft created. Nothing was sent.",
+                    "status": (
+                        "interview_scheduled" if action["action_type"] == "candidate_interview_package"
+                        else "hired" if action["action_type"] == "create_onboarding_package"
+                        else "rejection_drafted"
+                    ),
+                    "message": (
+                        "Interview appointment and Gmail draft created."
+                        if action["action_type"] == "candidate_interview_package"
+                        else "Employee record and draft contract created. Nothing was sent."
+                        if action["action_type"] == "create_onboarding_package"
+                        else "Rejection Gmail draft created. Nothing was sent."
+                    ),
                     "result": result,
                 }
                 try:
@@ -943,6 +1009,25 @@ def execute_action(action_id: int):
 @app.get("/entities")
 def list_entities():
     return {"entities": database.list_entities()}
+
+
+@app.get("/onboarding-packages/{package_id}/contract", response_class=HTMLResponse)
+def view_onboarding_contract(package_id: int):
+    package = database.get_onboarding_package(package_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Onboarding package was not found")
+    draft = html.escape(package["contract_draft"])
+    return HTMLResponse(
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Draft employment agreement</title>"
+        "<style>body{font:16px/1.6 system-ui;margin:48px auto;max-width:760px;padding:0 24px;color:#17201d}"
+        ".warning{background:#fff4d6;border:1px solid #e0b84c;padding:12px 16px;border-radius:8px}"
+        "pre{white-space:pre-wrap;font:inherit}</style></head><body>"
+        "<p class='warning'><strong>Draft only.</strong> HR and legal review are required. "
+        "Nothing has been sent or signed.</p>"
+        f"<pre>{draft}</pre></body></html>"
+    )
 
 
 @app.get("/operational-records")
@@ -978,6 +1063,7 @@ def receive_trello_candidate_status(
         "schedule interview": "interview",
         "rejected": "reject", "reject": "reject",
         "on hold": "hold", "hold": "hold",
+        "hired": "hire", "hire": "hire",
     }.get(normalized)
     if decision is None:
         raise HTTPException(status_code=422, detail="Unsupported candidate Trello list")

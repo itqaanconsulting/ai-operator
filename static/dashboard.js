@@ -69,6 +69,7 @@ function actionLabel(type, recordType) {
     draft_reply: "Draft an email reply",
     calendar_event: "Create a calendar event",
     candidate_interview_package: "Create interview appointment and Gmail draft",
+    create_onboarding_package: "Create employee record and draft contract",
     record_decision: "Save a business decision",
     schedule_follow_up: "Schedule a follow-up",
     create_operational_record: recordType === "candidate_review"
@@ -83,6 +84,7 @@ function outcomeLabel(type, recordType) {
     draft_reply: "Create Gmail draft",
     calendar_event: "Create calendar event",
     candidate_interview_package: "Create interview package",
+    create_onboarding_package: "Create onboarding package",
     record_decision: "Save decision to business memory",
     schedule_follow_up: "Schedule follow-up",
     create_operational_record: recordType === "candidate_review"
@@ -129,10 +131,12 @@ function renderCommitments() {
         const decision = payload.decision_record || {};
         const followUp = payload.follow_up || {};
         const record = payload.operational_record || {};
+        const onboarding = payload.onboarding || {};
         const isCandidateAction = Boolean(payload.candidate_review_id);
         const outcome = action ? outcomeLabel(action.action_type, record.record_type) : null;
         const proposalReady = action?.action_type === "calendar_event" ? Boolean(event.start_at)
           : action?.action_type === "candidate_interview_package" ? Boolean(event.start_at && payload.suggested_reply)
+          : action?.action_type === "create_onboarding_package" ? Boolean(onboarding.start_date && onboarding.legal_entity && onboarding.job_title && onboarding.employee_name && onboarding.personal_email)
           : action?.action_type === "record_decision" ? Boolean(decision.title && decision.decision)
           : action?.action_type === "schedule_follow_up" ? Boolean(followUp.follow_up_at && followUp.subject && followUp.body)
           : true;
@@ -146,11 +150,13 @@ function renderCommitments() {
           ${action?.action_type === "draft_reply" && payload.suggested_reply ? `<details class="draft-editor" ${isCandidateAction ? "open" : ""}><summary>${isCandidateAction ? "Rejection email" : "Review or edit email draft"}</summary><div class="draft-editor-body"><input data-draft-subject="${action.id}" value="${escapeHtml(payload.draft_subject || `Re: ${group.email.subject}`)}" aria-label="Draft subject"><textarea data-draft-body="${action.id}" aria-label="Draft body">${escapeHtml(payload.suggested_reply)}</textarea>${isCandidateAction ? "" : `<button class="button secondary" data-save-draft="${action.id}">Save draft edits — do not approve</button>`}</div></details>` : ""}
           ${action?.action_type === "calendar_event" ? `<details class="draft-editor" ${action.status === "failed" || String(state.focusEmailId) === String(group.email.id) ? "open" : ""}><summary>${action.status === "failed" ? "Fix calendar details before retrying" : "Review or edit calendar event"}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Title"><label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label><label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location (optional)"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails, comma separated"><button class="button secondary wide" data-save-event="${action.id}">Save event edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "candidate_interview_package" ? `<details class="draft-editor" open><summary>Interview details</summary><div class="draft-editor-body calendar-editor-grid"><div class="wide slot-suggestions" data-interview-slots="${action.id}"><span>Checking your calendar for three suitable times…</span></div><input class="wide" data-event-title="${action.id}" value="${escapeHtml(event.title || item.title)}" placeholder="Interview title"><label class="date-time-field"><span>Starts</span><input type="datetime-local" data-event-start="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.start_at))}" required></label><label class="date-time-field"><span>Ends</span><input type="datetime-local" data-event-end="${action.id}" value="${escapeHtml(dateTimeLocalValue(event.end_at))}"></label><input class="wide" data-event-location="${action.id}" value="${escapeHtml(event.location || "")}" placeholder="Location or meeting link"><input class="wide" data-event-attendees="${action.id}" value="${escapeHtml((event.attendees || []).join(", "))}" placeholder="Attendee emails"><input class="wide" data-package-subject="${action.id}" value="${escapeHtml(payload.draft_subject || "Interview invitation")}" aria-label="Email subject"><textarea class="wide" data-package-body="${action.id}" aria-label="Invitation email">${escapeHtml(payload.suggested_reply || "")}</textarea></div></details>` : ""}
+          ${action?.action_type === "create_onboarding_package" ? `<details class="draft-editor" open><summary>Onboarding details</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-onboarding-name="${action.id}" value="${escapeHtml(onboarding.employee_name || "")}" placeholder="Employee name" required><input class="wide" type="email" data-onboarding-email="${action.id}" value="${escapeHtml(onboarding.personal_email || "")}" placeholder="Personal email" required><input class="wide" data-onboarding-role="${action.id}" value="${escapeHtml(onboarding.job_title || "")}" placeholder="Job title" required><label class="date-time-field"><span>Start date</span><input type="date" data-onboarding-start="${action.id}" value="${escapeHtml(onboarding.start_date || "")}" required></label><label><span>Employment type</span><select data-onboarding-type="${action.id}"><option value="permanent" ${onboarding.employment_type === "permanent" ? "selected" : ""}>Permanent</option><option value="fixed_term" ${onboarding.employment_type === "fixed_term" ? "selected" : ""}>Fixed term</option><option value="contractor" ${onboarding.employment_type === "contractor" ? "selected" : ""}>Contractor</option></select></label><input class="wide" data-onboarding-entity="${action.id}" value="${escapeHtml(onboarding.legal_entity || "")}" placeholder="Legal employer name" required><input data-onboarding-manager="${action.id}" value="${escapeHtml(onboarding.manager || "")}" placeholder="Manager (optional)"><input data-onboarding-location="${action.id}" value="${escapeHtml(onboarding.work_location || "")}" placeholder="Work location (optional)"><label><span>Hours per week</span><input type="number" min="1" max="80" step="0.5" data-onboarding-hours="${action.id}" value="${escapeHtml(onboarding.hours_per_week || 40)}"></label><p class="wide supporting-copy">Creates an internal employee record and a clearly marked draft contract. Nothing is signed or sent.</p></div></details>` : ""}
           ${action?.action_type === "record_decision" ? `<details class="draft-editor"><summary>Review or edit business decision</summary><div class="draft-editor-body"><input data-decision-title="${action.id}" value="${escapeHtml(decision.title || item.title)}" aria-label="Decision title"><textarea data-decision-outcome="${action.id}" aria-label="Decision outcome" placeholder="Enter the final decision before approval">${escapeHtml(decision.decision || "")}</textarea><textarea data-decision-rationale="${action.id}" aria-label="Decision rationale" placeholder="Rationale (optional)">${escapeHtml(decision.rationale || "")}</textarea><button class="button secondary" data-save-decision="${action.id}">Save decision edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "schedule_follow_up" ? `<details class="draft-editor"><summary>Review or edit follow-up</summary><div class="draft-editor-body"><input data-follow-up-at="${action.id}" value="${escapeHtml(followUp.follow_up_at || item.deadline || "")}" aria-label="Follow-up time" placeholder="2026-09-10T09:00:00+02:00"><input data-follow-up-subject="${action.id}" value="${escapeHtml(followUp.subject || `Re: ${group.email.subject}`)}" aria-label="Follow-up subject"><textarea data-follow-up-body="${action.id}" aria-label="Follow-up draft">${escapeHtml(followUp.body || "")}</textarea><button class="button secondary" data-save-follow-up="${action.id}">Save follow-up edits — do not approve</button></div></details>` : ""}
           ${action?.action_type === "create_operational_record" && record.record_type !== "candidate_review" ? `<details class="draft-editor"><summary>Review or edit ${escapeHtml(record.record_type?.replaceAll("_", " ") || "business record")}</summary><div class="draft-editor-body calendar-editor-grid"><input class="wide" data-record-title="${action.id}" value="${escapeHtml(record.title || item.title)}" aria-label="Record title"><input data-record-owner="${action.id}" value="${escapeHtml(record.owner || "")}" placeholder="Owner (optional)"><input data-record-due="${action.id}" value="${escapeHtml(record.due_at || "")}" placeholder="Due date (optional)"><input data-record-amount="${action.id}" value="${escapeHtml(record.amount ?? "")}" placeholder="Amount (optional)" type="number" step="0.01"><input data-record-currency="${action.id}" value="${escapeHtml(record.currency || "")}" placeholder="Currency"><textarea class="wide" data-record-next="${action.id}" aria-label="Next action">${escapeHtml(record.next_action || action.description)}</textarea><textarea class="wide" data-record-notes="${action.id}" aria-label="Notes">${escapeHtml(record.notes || "")}</textarea><button class="button secondary wide" data-save-record="${action.id}">Save record edits — do not approve</button></div></details>` : ""}
           <div class="card-actions">
             ${action?.status === "pending_approval" && action.action_type === "candidate_interview_package" ? `<button class="button approve" data-schedule-interview="${action.id}">Schedule interview</button>` : ""}
+            ${action?.status === "pending_approval" && action.action_type === "create_onboarding_package" ? `<button class="button approve" data-create-onboarding="${action.id}">Create employee record and draft contract</button>` : ""}
             ${action?.status === "pending_approval" && action.action_type === "draft_reply" && isCandidateAction ? `<button class="button approve" data-create-rejection-draft="${action.id}">Create rejection draft</button>` : ""}
             ${action?.status === "pending_approval" && !isCandidateAction && proposalReady && outcome ? `<button class="button approve" data-approve-execute="${action.id}" data-outcome="${escapeHtml(outcome)}">${escapeHtml(outcome)}</button>` : ""}
             ${action?.status === "pending_approval" && !isCandidateAction && !proposalReady ? '<span class="missing-details">Open the editor above and complete the required details.</span>' : ""}
@@ -173,6 +179,7 @@ function renderCommitments() {
   elements.commitments.querySelectorAll("[data-save-draft]").forEach(button => button.addEventListener("click", () => saveActionDraft(button.dataset.saveDraft)));
   elements.commitments.querySelectorAll("[data-save-event]").forEach(button => button.addEventListener("click", () => saveCalendarProposal(button.dataset.saveEvent)));
   elements.commitments.querySelectorAll("[data-schedule-interview]").forEach(button => button.addEventListener("click", () => scheduleInterview(button.dataset.scheduleInterview, button)));
+  elements.commitments.querySelectorAll("[data-create-onboarding]").forEach(button => button.addEventListener("click", () => createOnboardingPackage(button.dataset.createOnboarding, button)));
   elements.commitments.querySelectorAll("[data-create-rejection-draft]").forEach(button => button.addEventListener("click", () => createCandidateRejectionDraft(button.dataset.createRejectionDraft, button)));
   elements.commitments.querySelectorAll("[data-save-decision]").forEach(button => button.addEventListener("click", () => saveDecisionProposal(button.dataset.saveDecision)));
   elements.commitments.querySelectorAll("[data-save-follow-up]").forEach(button => button.addEventListener("click", () => saveFollowUpProposal(button.dataset.saveFollowUp)));
@@ -236,7 +243,7 @@ function renderOperationalRecords() {
 }
 
 function renderCandidateReviews() {
-  const statusOrder = { interview_pending: 0, interview_scheduled: 1, open: 2, on_hold: 3, rejection_pending: 4, rejection_drafted: 5 };
+  const statusOrder = { onboarding_pending: 0, hired: 1, interview_pending: 2, interview_scheduled: 3, open: 4, on_hold: 5, rejection_pending: 6, rejection_drafted: 7 };
   const candidates = state.operationalRecords
     .filter(record => record.record_type === "candidate_review")
     .sort((left, right) => (statusOrder[left.status] ?? 99) - (statusOrder[right.status] ?? 99));
@@ -247,6 +254,8 @@ function renderCandidateReviews() {
     rejection_pending: "Prepare rejection",
     rejection_drafted: "Rejected — email ready",
     on_hold: "On hold",
+    onboarding_pending: "Complete onboarding",
+    hired: "Hired — onboarding ready",
   };
   document.querySelector("#candidate-count").textContent = `${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`;
   elements.candidateReviews.innerHTML = candidates.length ? candidates.map(record => `
@@ -255,13 +264,15 @@ function renderCandidateReviews() {
       <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
       <p>${escapeHtml(record.notes || record.next_action)}</p>
       ${record.trello_status === "completed"
-        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Rejected, or On hold.</span>' : ""}</div>`
+        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.onboarding_package_id ? `<a class="button secondary" href="/onboarding-packages/${record.onboarding_package_id}/contract" target="_blank" rel="noopener">View draft contract</a>` : ""}${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Hired, Rejected, or On hold.</span>' : ""}</div>`
         : `<div class="candidate-actions"><button class="button primary" data-send-candidate-trello="${record.id}">${record.trello_status === "failed" ? "Retry hiring board" : "Send to hiring board"}</button></div>`}
       ${record.status === "interview_pending" ? '<p class="candidate-next">Trello decision received. Choose a time and confirm execution in Review inbox.</p>' : ""}
       ${record.status === "rejection_pending" ? '<p class="candidate-next">Trello decision received. Review the rejection email in Review inbox.</p>' : ""}
+      ${record.status === "onboarding_pending" ? '<p class="candidate-next">Hire decision received. Complete the employee details in Review inbox.</p>' : ""}
       ${record.status === "on_hold" ? '<p class="candidate-next">Candidate is on hold. No external action was created.</p>' : ""}
       ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
       ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
+      ${record.status === "hired" ? '<p class="candidate-next success">Employee record and draft contract created. HR/legal review is still required.</p>' : ""}
     </article>`).join("") : '<p class="empty-state">No candidate reviews yet.</p>';
   elements.candidateReviews.querySelectorAll("[data-send-candidate-trello]").forEach(button => {
     button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendCandidateTrello));
@@ -609,6 +620,35 @@ async function scheduleInterview(id, button) {
     await refresh();
   } catch (error) {
     notify(`Interview could not be scheduled: ${error.message}`, true);
+    await refresh();
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function createOnboardingPackage(id, button) {
+  const value = name => elements.commitments.querySelector(`[data-onboarding-${name}="${id}"]`).value.trim();
+  const body = {
+    employee_name: value("name"), personal_email: value("email"), job_title: value("role"),
+    start_date: value("start"), employment_type: value("type"), legal_entity: value("entity"),
+    manager: value("manager") || null, work_location: value("location") || null,
+    hours_per_week: Number(value("hours")),
+  };
+  if (!body.employee_name || !body.personal_email || !body.job_title || !body.start_date || !body.legal_entity) {
+    notify("Complete the employee name, email, job title, start date and legal employer.", true);
+    return;
+  }
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Creating…";
+  try {
+    await api(`/actions/${id}/candidate-onboarding-package`, { method: "PUT", body: JSON.stringify(body) });
+    await api(`/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note: "Hire decision approved in Trello; onboarding details confirmed in dashboard" }) });
+    await api(`/actions/${id}/execute`, { method: "POST" });
+    notify("Employee record and draft contract created. Nothing was sent or signed.");
+    await refresh();
+  } catch (error) {
+    notify(`Onboarding package could not be created: ${error.message}`, true);
     await refresh();
     button.disabled = false;
     button.textContent = originalLabel;

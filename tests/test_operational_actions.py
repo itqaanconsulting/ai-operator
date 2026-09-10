@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ import main
 from database import Database
 from models import (
     ActionStatus, CalendarEventProposalUpdateRequest, CandidateInterviewPackageUpdateRequest,
+    CandidateOnboardingPackageUpdateRequest,
     DecisionRequest, EmailAnalysis, EmailRequest, EmailWorkItem,
 )
 from unittest.mock import patch
@@ -145,6 +147,46 @@ class OperationalActionTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "on_hold")
         self.assertIsNone(result["action_id"])
+
+    def test_hired_candidate_creates_employee_record_and_draft_contract(self):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(
+                sender="Amina Yusuf <amina@example.com>",
+                subject="Application for Automation Engineer",
+                body="Amina applied.",
+            ),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Amina applied.", contact_name="Amina Yusuf",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review Amina Yusuf for Automation Engineer",
+                    proposed_action="Create a candidate review.", owner="Recruiting",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "hire")
+
+        main.update_candidate_onboarding_package(
+            prepared["action_id"],
+            CandidateOnboardingPackageUpdateRequest(
+                employee_name="Amina Yusuf", personal_email="amina@example.com",
+                job_title="Automation Engineer", start_date="2030-10-01",
+                employment_type="permanent", legal_entity="Example Operations B.V.",
+                manager="Hiring Manager", work_location="Amsterdam", hours_per_week=40,
+            ),
+        )
+        main.approve_action(prepared["action_id"], DecisionRequest(note="HR reviewed"))
+        result = main.execute_action(prepared["action_id"])
+        updated = main.database.get_operational_record(record["id"])
+        package_id = json.loads(result["payload_json"])["external_result"]["onboarding_package_id"]
+        package = main.database.get_onboarding_package(package_id)
+
+        self.assertEqual(updated["status"], "hired")
+        self.assertEqual(package["status"], "draft")
+        self.assertIn("DRAFT — FOR HR AND LEGAL REVIEW ONLY", package["contract_draft"])
+        self.assertIn("Example Operations B.V.", package["contract_draft"])
 
     def test_trello_recreates_missing_interview_approval_for_pending_candidate(self):
         _, _, action_id = main.database.save_analysis(

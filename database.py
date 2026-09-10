@@ -167,6 +167,23 @@ class Database:
                     completed_at TEXT,
                     UNIQUE (operational_record_id, integration)
                 );
+                CREATE TABLE IF NOT EXISTS onboarding_packages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_action_id INTEGER NOT NULL UNIQUE REFERENCES proposed_actions(id),
+                    candidate_review_id INTEGER NOT NULL UNIQUE REFERENCES operational_records(id),
+                    employee_name TEXT NOT NULL,
+                    personal_email TEXT NOT NULL,
+                    job_title TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    employment_type TEXT NOT NULL,
+                    legal_entity TEXT NOT NULL,
+                    manager TEXT,
+                    work_location TEXT,
+                    hours_per_week REAL NOT NULL,
+                    contract_draft TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE TABLE IF NOT EXISTS calendar_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     google_event_id TEXT NOT NULL,
@@ -933,12 +950,14 @@ class Database:
     def list_operational_records(self, status: str | None = None):
         query = """SELECT r.*, e.name AS entity_name, em.subject AS source_subject,
                           d.status AS trello_status, d.external_id AS trello_card_id,
-                          d.external_url AS trello_card_url, d.error_message AS trello_error
+                          d.external_url AS trello_card_url, d.error_message AS trello_error,
+                          op.id AS onboarding_package_id, op.status AS onboarding_status
                    FROM operational_records r
                    LEFT JOIN entities e ON e.id = r.entity_id
                    JOIN emails em ON em.id = r.email_id
                    LEFT JOIN integration_dispatches d
-                     ON d.operational_record_id = r.id AND d.integration = 'trello'"""
+                     ON d.operational_record_id = r.id AND d.integration = 'trello'
+                   LEFT JOIN onboarding_packages op ON op.candidate_review_id = r.id"""
         params = ()
         if status:
             query += " WHERE r.status = ?"
@@ -1010,6 +1029,7 @@ class Database:
                 "interview": {"interview_scheduled"},
                 "reject": {"rejection_drafted"},
                 "hold": {"on_hold"},
+                "hire": {"hired"},
             }
             if record["status"] in settled_statuses.get(decision, set()):
                 return {"record_id": record_id, "status": record["status"],
@@ -1035,11 +1055,13 @@ class Database:
                 return {"record_id": record_id, "status": "on_hold", "action_id": None,
                         "duplicate": False}
 
-            if decision not in {"interview", "reject"}:
+            if decision not in {"interview", "reject", "hire"}:
                 raise ValueError("Unsupported candidate review decision")
-            desired_action_type = (
-                "candidate_interview_package" if decision == "interview" else "draft_reply"
-            )
+            desired_action_type = {
+                "interview": "candidate_interview_package",
+                "reject": "draft_reply",
+                "hire": "create_onboarding_package",
+            }[decision]
             active = connection.execute(
                 """SELECT id, action_type, status FROM proposed_actions WHERE commitment_id = ?
                    AND status IN ('pending_approval', 'approved', 'executing')
@@ -1080,7 +1102,7 @@ class Database:
                     ),
                 }
                 record_status = "interview_pending"
-            else:
+            elif decision == "reject":
                 action_type = "draft_reply"
                 description = f"Prepare a respectful rejection email for {candidate_name}."
                 payload = {
@@ -1094,6 +1116,27 @@ class Database:
                     ),
                 }
                 record_status = "rejection_pending"
+            else:
+                action_type = "create_onboarding_package"
+                description = f"Review the employee record and draft contract for {candidate_name}."
+                candidate_email = parseaddr(record["sender"] or "")[1]
+                role = record["title"].split(" for ", 1)[-1] if " for " in record["title"] else ""
+                payload = {
+                    "scenario": "hr", "work_item_kind": "employee_onboarding",
+                    "candidate_review_id": record_id,
+                    "onboarding": {
+                        "employee_name": candidate_name,
+                        "personal_email": candidate_email,
+                        "job_title": role,
+                        "start_date": None,
+                        "employment_type": "permanent",
+                        "legal_entity": None,
+                        "manager": None,
+                        "work_location": None,
+                        "hours_per_week": 40,
+                    },
+                }
+                record_status = "onboarding_pending"
 
             connection.execute(
                 "UPDATE commitments SET status = 'open', completed_at = NULL WHERE id = ?",
@@ -1118,6 +1161,41 @@ class Database:
             )
             return {"record_id": record_id, "status": record_status,
                     "action_id": cursor.lastrowid, "duplicate": False}
+
+    def create_onboarding_package(self, action: dict, proposal: dict, contract_draft: str):
+        candidate_review_id = json.loads(action.get("payload_json") or "{}").get(
+            "candidate_review_id"
+        )
+        if not candidate_review_id:
+            raise ValueError("Onboarding action is not linked to a candidate")
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO onboarding_packages
+                   (source_action_id, candidate_review_id, employee_name, personal_email,
+                    job_title, start_date, employment_type, legal_entity, manager,
+                    work_location, hours_per_week, contract_draft)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (action["id"], candidate_review_id, proposal["employee_name"],
+                 proposal["personal_email"], proposal["job_title"], proposal["start_date"],
+                 proposal["employment_type"], proposal["legal_entity"], proposal.get("manager"),
+                 proposal.get("work_location"), proposal["hours_per_week"], contract_draft),
+            )
+            row = connection.execute(
+                "SELECT * FROM onboarding_packages WHERE source_action_id = ?", (action["id"],)
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
+                   VALUES ('candidate_review', ?, 'onboarding_package_created', ?)""",
+                (candidate_review_id, json.dumps({"onboarding_package_id": row["id"]})),
+            )
+            return dict(row)
+
+    def get_onboarding_package(self, package_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM onboarding_packages WHERE id = ?", (package_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def claim_integration_dispatch(self, record_id: int, integration: str):
         with self.connect() as connection:
@@ -1893,6 +1971,7 @@ class Database:
             if candidate_review_id:
                 candidate_status = (
                     "interview_scheduled" if current["action_type"] in {"calendar_event", "candidate_interview_package"}
+                    else "hired" if current["action_type"] == "create_onboarding_package"
                     else "rejection_drafted" if current["action_type"] == "draft_reply"
                     else "completed"
                 )

@@ -16,7 +16,7 @@
         "resource": "card",
         "operation": "update",
         "id": {"mode": "id", "value": "={{ $('Completed candidate action').item.json.body.card_id }}"},
-        "updateFields": {"idList": "={{ $('Completed candidate action').item.json.body.status === 'interview_scheduled' ? 'REPLACE_WITH_INTERVIEW_SCHEDULED_LIST_ID' : 'REPLACE_WITH_REJECTED_LIST_ID' }}"}
+        "updateFields": {"idList": "={{ $('Completed candidate action').item.json.body.status === 'interview_scheduled' ? 'REPLACE_WITH_INTERVIEW_SCHEDULED_LIST_ID' : $('Completed candidate action').item.json.body.status === 'hired' ? 'REPLACE_WITH_HIRED_LIST_ID' : 'REPLACE_WITH_REJECTED_LIST_ID' }}"}
       },
       "id": "move-candidate-result",
       "name": "Move card to final status",

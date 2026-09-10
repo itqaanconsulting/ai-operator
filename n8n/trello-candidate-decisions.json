@@ -35,6 +35,14 @@
       "position": [240, 320]
     },
     {
+      "parameters": {"resource": "list", "operation": "getCards", "id": "REPLACE_WITH_HIRED_LIST_ID", "returnAll": true, "additionalFields": {"fields": "id,name,url,idList"}},
+      "id": "get-hired-cards",
+      "name": "Get Hired cards",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [240, 480]
+    },
+    {
       "parameters": {"method": "POST", "url": "http://ai-operator-api:8000/integrations/n8n/trello-candidate-status", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{ JSON.stringify({ card_id: $json.id, list_name: 'Schedule interview', event_id: 'poll:' + $json.id + ':interview' }) }}", "options": {}},
       "id": "notify-interview",
       "name": "Prepare interview approval",
@@ -57,13 +65,22 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [520, 320]
+    },
+    {
+      "parameters": {"method": "POST", "url": "http://ai-operator-api:8000/integrations/n8n/trello-candidate-status", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{ JSON.stringify({ card_id: $json.id, list_name: 'Hired', event_id: 'poll:' + $json.id + ':hired' }) }}", "options": {}},
+      "id": "notify-hired",
+      "name": "Prepare onboarding approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 480]
     }
   ],
   "connections": {
-    "Every 2 minutes": {"main": [[{"node": "Get Schedule interview cards", "type": "main", "index": 0}, {"node": "Get Rejected cards", "type": "main", "index": 0}, {"node": "Get On hold cards", "type": "main", "index": 0}]]},
+    "Every 2 minutes": {"main": [[{"node": "Get Schedule interview cards", "type": "main", "index": 0}, {"node": "Get Rejected cards", "type": "main", "index": 0}, {"node": "Get On hold cards", "type": "main", "index": 0}, {"node": "Get Hired cards", "type": "main", "index": 0}]]},
     "Get Schedule interview cards": {"main": [[{"node": "Prepare interview approval", "type": "main", "index": 0}]]},
     "Get Rejected cards": {"main": [[{"node": "Prepare rejection approval", "type": "main", "index": 0}]]},
-    "Get On hold cards": {"main": [[{"node": "Place candidate on hold", "type": "main", "index": 0}]]}
+    "Get On hold cards": {"main": [[{"node": "Place candidate on hold", "type": "main", "index": 0}]]},
+    "Get Hired cards": {"main": [[{"node": "Prepare onboarding approval", "type": "main", "index": 0}]]}
   },
   "pinData": {},
   "settings": {"executionOrder": "v1"},

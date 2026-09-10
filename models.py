@@ -148,7 +148,7 @@ class OperationalRecordProposal(BaseModel):
 
 
 class CandidateReviewDecisionRequest(BaseModel):
-    decision: Literal["interview", "reject", "hold"]
+    decision: Literal["interview", "reject", "hold", "hire"]
     note: str | None = Field(default=None, max_length=2000)
 
 
@@ -162,6 +162,18 @@ class CandidateInterviewPackageUpdateRequest(BaseModel):
     calendar_event: CalendarEventProposalUpdateRequest
     email_subject: str = Field(min_length=1, max_length=500)
     email_body: str = Field(min_length=1, max_length=20_000)
+
+
+class CandidateOnboardingPackageUpdateRequest(BaseModel):
+    employee_name: str = Field(min_length=1, max_length=300)
+    personal_email: str = Field(min_length=3, max_length=320)
+    job_title: str = Field(min_length=1, max_length=300)
+    start_date: str = Field(min_length=8, max_length=30)
+    employment_type: Literal["permanent", "fixed_term", "contractor"] = "permanent"
+    legal_entity: str = Field(min_length=1, max_length=300)
+    manager: str | None = Field(default=None, max_length=300)
+    work_location: str | None = Field(default=None, max_length=300)
+    hours_per_week: float = Field(default=40, gt=0, le=80)
 
 
 class GmailImportRequest(BaseModel):

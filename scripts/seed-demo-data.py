@@ -135,6 +135,30 @@ def build_demo_database(path: Path) -> None:
         skills="Figma, design systems, and user research",
     )
 
+    elena = create_candidate_record(
+        db, name="Elena Novak", role="Operations Manager",
+        email="elena.novak@example.com", message_id="demo-gmail-elena",
+        skills="operations, vendor management, and process improvement",
+    )
+    onboarding = db.prepare_candidate_review_action(
+        elena["id"], "hire", "Selected in fictional Trello demo"
+    )
+    db.update_action_payload(
+        onboarding["action_id"],
+        {"onboarding": {
+            "employee_name": "Elena Novak",
+            "personal_email": "elena.novak@example.com",
+            "job_title": "Operations Manager",
+            "start_date": (datetime.now().date() + timedelta(days=21)).isoformat(),
+            "employment_type": "permanent",
+            "legal_entity": "Example Operations B.V.",
+            "manager": "Head of Operations",
+            "work_location": "Amsterdam",
+            "hours_per_week": 40,
+        }},
+        {"create_onboarding_package"},
+    )
+
     _, _, noor_action_id = db.save_analysis(
         EmailRequest(
             sender="Noor Rahman <noor.rahman@example.com>",
@@ -149,14 +173,14 @@ def build_demo_database(path: Path) -> None:
 
     run_id = db.start_automation_run("inbox_automation")
     db.finish_automation_run(run_id, {
-        "found": 5,
+        "found": 6,
         "processed": [{
             "gmail_msg_id": "demo-gmail-noor",
             "action_id": noor_action_id,
         }],
         "skipped": [
             "demo-gmail-miguel", "demo-gmail-amina", "demo-gmail-sarah",
-            "demo-gmail-daniel",
+            "demo-gmail-daniel", "demo-gmail-elena",
         ],
         "errors": [],
         "follow_up_monitor": {"created": []},

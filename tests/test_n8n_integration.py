@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import os
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -124,6 +125,50 @@ class N8nIntegrationTest(unittest.TestCase):
         packages = [row for row in main.database.list_rows("proposed_actions")
                     if row["action_type"] == "candidate_interview_package"]
         self.assertEqual(len(packages), 1)
+
+    @patch("main._n8n_shared_secret", return_value="test-secret")
+    def test_hired_trello_card_prepares_onboarding_review(self, _secret):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(
+                sender="Sam <sam@example.com>", subject="Application for Engineer",
+                body="Sam applied.",
+            ),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sam applied.", contact_name="Sam",
+                work_items=[EmailWorkItem(kind="job_application", title="Review Sam for Engineer",
+                                          proposed_action="Create candidate review.")],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        dispatch, _ = main.database.claim_integration_dispatch(record["id"], "trello")
+        main.database.finish_integration_dispatch(dispatch["id"], {"id": "card-hired-1"})
+
+        result = main.receive_trello_candidate_status(
+            TrelloCandidateStatusRequest(
+                card_id="card-hired-1", list_name="Hired", event_id="poll-hired-1"
+            ),
+            "test-secret",
+        )
+
+        action = main.database.get_action_context(result["action_id"])
+        self.assertEqual(result["decision"], "hire")
+        self.assertTrue(result["requires_human_review"])
+        self.assertEqual(action["action_type"], "create_onboarding_package")
+        self.assertEqual(action["status"], "pending_approval")
+
+    def test_candidate_result_template_keeps_hired_cards_in_hired_list(self):
+        workflow = json.loads(
+            Path("n8n/candidate-result-to-trello.json").read_text(encoding="utf-8")
+        )
+        update_card = next(
+            node for node in workflow["nodes"] if node["name"] == "Move card to final status"
+        )
+        list_mapping = update_card["parameters"]["updateFields"]["idList"]
+
+        self.assertIn("status === 'hired'", list_mapping)
+        self.assertIn("REPLACE_WITH_HIRED_LIST_ID", list_mapping)
 
 
 if __name__ == "__main__":

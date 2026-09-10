@@ -29,6 +29,9 @@ automatically.
   from a single **Schedule interview** action. It proposes three conflict-free
   times based on the candidate's stated availability and the recruiter's Calendar.
   The result moves the Trello card to a final status through n8n.
+- Treats a Trello move to **Hired** as a separate HR decision. It prepares one
+  approval-gated onboarding form, then creates an internal employee record and
+  a clearly marked draft employment agreement. Nothing is sent or signed.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
 - Provides an authenticated n8n schedule entry point for proactive Gmail intake;
@@ -598,8 +601,9 @@ a public repository or log.
 
 ## Next steps
 
-1. Add grounded CV attachment extraction to the recruitment demo.
-2. Replace Trello polling with a signed webhook.
-3. Add job-specific, human-defined candidate review criteria.
-4. Continue the contract pilot with trusted references and material-difference
+1. Connect the onboarding boundary to a customer-selected HRIS such as Frappe HR.
+2. Add grounded CV attachment extraction to the recruitment demo.
+3. Replace Trello polling with a signed webhook.
+4. Add job-specific, human-defined candidate review criteria.
+5. Continue the contract pilot with trusted references and material-difference
    evidence.
