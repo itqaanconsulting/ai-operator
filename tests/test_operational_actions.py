@@ -140,6 +140,35 @@ class OperationalActionTest(unittest.TestCase):
         self.assertNotEqual(retried["action_id"], first["action_id"])
         self.assertEqual(retried["status"], "interview_pending")
 
+    @patch("main.CalendarOperator.suggest_interview_slots")
+    @patch("main.get_calendar_service")
+    def test_candidate_interview_slot_endpoint_uses_ai_availability(
+        self, _calendar_service, suggest_slots
+    ):
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(subject="Application", body="Tuesday afternoon works.", gmail_msg_id="gmail-slots"),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Sam applied.", contact_name="Sam",
+                availability_preferences="Tuesday afternoon",
+                work_items=[EmailWorkItem(kind="job_application", title="Review Sam",
+                                          proposed_action="Create candidate review.")],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "interview")
+        suggest_slots.return_value = [{
+            "start_at": "2030-09-17T13:00:00+02:00",
+            "end_at": "2030-09-17T13:30:00+02:00", "label": "Tue 17 Sep, 13:00",
+            "preference_match": True, "reason": "Tuesday afternoon",
+        }]
+
+        result = main.suggest_candidate_interview_slots(prepared["action_id"])
+
+        self.assertEqual(len(result["slots"]), 1)
+        self.assertIn("Tuesday afternoon", suggest_slots.call_args.kwargs["preference_text"])
+
     @patch("main.CalendarOperator.create_event")
     @patch("main.GmailOperator.create_reply_draft")
     @patch("main.get_calendar_service")

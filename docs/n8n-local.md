@@ -100,10 +100,12 @@ items, but it cannot approve them or perform Gmail, Calendar, or Trello writes.
 
 Create these lists on the same Trello recruitment board:
 
-- `AI Inbox`
-- `Interview`
+- `New applications`
+- `Schedule interview`
 - `Rejected`
 - `On hold`
+- `Interview confirmed`
+- `Hired`
 
 Import `n8n/trello-candidate-decisions.json`. Connect the existing Trello
 credential to all three Trello nodes and replace each placeholder list ID with
@@ -113,20 +115,28 @@ the backend creates at most one active follow-up action per candidate.
 
 Import `n8n/candidate-result-to-trello.json`. Configure its Webhook node with
 the existing Header Auth credential and its Trello node with the existing Trello
-credential. Publish it at `/webhook/ai-operator-candidate-result`.
+credential. In **Move card to final status**, replace both placeholder list IDs
+with the IDs for `Interview confirmed` and `Rejected`. Publish it at
+`/webhook/ai-operator-candidate-result`.
 
 The resulting flow is:
 
 ```text
-Gmail application -> AI review -> Trello AI Inbox
-Trello Interview -> n8n -> complete missing scheduling details
-Schedule interview -> Google Calendar event + Gmail draft -> Trello result comment
+Gmail application -> AI review -> Trello New applications
+Trello Schedule interview -> n8n -> choose one of three free Calendar times
+Schedule interview -> Google Calendar event + Gmail draft -> Interview confirmed + result comment
 ```
 
-Moving a card to `Rejected` prepares an editable Gmail rejection draft. Moving
+Moving a card to `Rejected` prepares an editable Gmail rejection draft and keeps
+the card in that terminal column. Moving
 it to `On hold` records the status without creating an external action. The
 operator never sends email automatically, and Calendar attendee notifications
 remain disabled; the recruiter retains the final send decision.
+
+The three time suggestions are calculated from the recruiter's Google Calendar.
+When the application mentions weekdays or a morning/afternoon preference, matching
+free slots are ranked first. Manual date and time fields remain available as a
+fallback.
 
 The Trello move is the hiring decision. The dashboard does not repeat that
 decision: it presents one **Schedule interview** action after the recruiter has

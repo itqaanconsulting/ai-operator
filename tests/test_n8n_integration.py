@@ -113,7 +113,7 @@ class N8nIntegrationTest(unittest.TestCase):
         dispatch, _ = main.database.claim_integration_dispatch(record["id"], "trello")
         main.database.finish_integration_dispatch(dispatch["id"], {"id": "card-hr-1"})
         request = TrelloCandidateStatusRequest(
-            card_id="card-hr-1", list_name="Interview", event_id="poll-1"
+            card_id="card-hr-1", list_name="Schedule interview", event_id="poll-1"
         )
 
         first = main.receive_trello_candidate_status(request, "test-secret")

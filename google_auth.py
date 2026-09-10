@@ -14,6 +14,16 @@ TOKEN_PATH = "token.pickle"
 CREDENTIALS_PATH = "credentials.json"
 
 
+class GoogleAuthorizationRequired(RuntimeError):
+    pass
+
+
+def _interactive_authorization_enabled():
+    return os.getenv("GOOGLE_OAUTH_INTERACTIVE", "true").strip().casefold() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def get_google_credentials():
     credentials = None
     if os.path.exists(TOKEN_PATH):
@@ -33,6 +43,11 @@ def get_google_credentials():
             credentials = None
 
     if not credentials or not credentials.valid or not credentials.has_scopes(SCOPES):
+        if not _interactive_authorization_enabled():
+            raise GoogleAuthorizationRequired(
+                "Google authorization expired or was revoked. Run "
+                ".\\scripts\\reauthorize-google.ps1 on the Windows host, then retry."
+            )
         flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
         credentials = flow.run_local_server(port=0)
 

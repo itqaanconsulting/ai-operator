@@ -33,8 +33,8 @@ sequenceDiagram
     AI->>AI: Extracts candidate and recommended work
     Recruiter->>AI: Confirms candidate intake
     AI->>n8n: Dispatches structured candidate record
-    n8n->>Trello: Creates card in AI Inbox
-    Recruiter->>Trello: Moves card to Interview
+    n8n->>Trello: Creates card in New applications
+    Recruiter->>Trello: Moves card to Schedule interview
     n8n->>AI: Reports Trello decision
     AI->>Recruiter: Shows date, time, and message form
     Recruiter->>AI: Selects Schedule interview
@@ -63,7 +63,8 @@ Before running the demo:
 2. Configure Google OAuth for Gmail and Google Calendar.
 3. Start the local stack with `./scripts/start-n8n.ps1`.
 4. Configure the n8n workflows described in [Local n8n](n8n-local.md).
-5. Create the Trello lists `AI Inbox`, `Interview`, `Rejected`, and `On hold`.
+5. Create the Trello lists `New applications`, `Schedule interview`,
+   `Interview confirmed`, `Hired`, `On hold`, and `Rejected`.
 6. Create the Gmail label `AI-Operator`.
 
 Credentials, tokens, local databases, Trello IDs, and webhook secrets must remain
@@ -106,9 +107,9 @@ dispatches the structured record through n8n to Trello.
 
 ### 3. Make the hiring decision
 
-Open the Trello board and move the candidate card from `AI Inbox` to one of:
+Open the Trello board and move the candidate card from `New applications` to one of:
 
-- `Interview` to prepare scheduling and an invitation draft.
+- `Schedule interview` to prepare scheduling and an invitation draft.
 - `Rejected` to prepare a rejection draft.
 - `On hold` to record the status without creating an external action.
 
@@ -117,12 +118,12 @@ decision again.
 
 ### 4. Complete the interview details
 
-For `Interview`, wait up to two minutes for the Trello polling workflow. Open the
+For `Schedule interview`, wait up to two minutes for the Trello polling workflow. Open the
 dashboard and use the automatically expanded **Ready to finish** section.
 
-Choose a future start time, an optional end time, and an optional location or
-meeting link. Review the generated subject and invitation, then select
-**Schedule interview** once.
+Choose one of the three free 30-minute times proposed from Google Calendar, or
+use the manual date and time fields as a fallback. Review the optional location,
+generated subject, and invitation, then select **Schedule interview** once.
 
 That single click saves the final details and executes the already-authorized
 workflow.
@@ -134,11 +135,11 @@ The demo is successful when all of the following are true:
 - Google Calendar contains the interview event.
 - Gmail contains an invitation draft in the original email thread.
 - No email or Calendar attendee update was sent automatically.
-- The Trello card contains a result comment.
+- The Trello card is in `Interview confirmed` and contains a result comment.
 - The candidate case shows `interview scheduled`.
 
-For the rejection path, verify that Gmail contains a rejection draft and that no
-message was sent.
+For the rejection path, verify that the card remains in `Rejected`, Gmail
+contains a rejection draft, and that no message was sent.
 
 ## Create a safe screenshot environment
 

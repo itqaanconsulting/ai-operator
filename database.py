@@ -1714,6 +1714,15 @@ class Database:
             rows = connection.execute(query + " ORDER BY id DESC", params).fetchall()
             return [dict(row) for row in rows]
 
+    def get_action_context(self, action_id: int):
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT a.*, e.subject, e.body, e.analysis_json, e.sender
+                   FROM proposed_actions a JOIN emails e ON e.id = a.email_id
+                   WHERE a.id = ?""", (action_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
     def decide_action(self, action_id: int, status: ActionStatus, note: str | None):
         if status not in {ActionStatus.APPROVED, ActionStatus.REJECTED}:
             raise ValueError("Invalid decision")

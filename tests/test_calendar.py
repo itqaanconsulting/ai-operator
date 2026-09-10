@@ -100,6 +100,23 @@ class CalendarOperatorTest(unittest.TestCase):
         self.assertEqual(service.resource.insert_kwargs["sendUpdates"], "none")
         self.assertEqual(service.resource.insert_kwargs["body"]["attendees"][0]["email"], "jane@example.com")
 
+    def test_interview_slots_prefer_requested_days_and_avoid_busy_times(self):
+        service = FakeCalendarService([{
+            "id": "busy-1", "summary": "Existing meeting",
+            "start": {"dateTime": "2026-09-15T13:00:00+02:00"},
+            "end": {"dateTime": "2026-09-15T13:30:00+02:00"},
+        }])
+
+        slots = CalendarOperator(service).suggest_interview_slots(
+            "I am available next week, preferably Tuesday or Wednesday afternoon.",
+            now=datetime(2026, 9, 9, 10, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(slots), 3)
+        self.assertEqual(slots[0]["start_at"], "2026-09-15T13:30:00+02:00")
+        self.assertTrue(all(slot["preference_match"] for slot in slots))
+        self.assertNotIn("2026-09-15T13:00:00+02:00", {slot["start_at"] for slot in slots})
+
 
 class CalendarDatabaseTest(unittest.TestCase):
     def setUp(self):

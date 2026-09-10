@@ -66,6 +66,7 @@ class EmailAnalysis(BaseModel):
     suggested_reply: str | None = None
     requires_approval: bool = True
     confidence: float = Field(default=0.5, ge=0, le=1)
+    availability_preferences: str | None = Field(default=None, max_length=1000)
     scenario: Literal[
         "general", "sales", "customer_service", "finance", "contract",
         "meeting", "approval", "operations", "escalation", "hr",

@@ -20,7 +20,9 @@ always require human approval. Classify the overall scenario as general, sales,
 customer_service, finance, contract, meeting, approval, operations, escalation, or hr.
 Return JSON with category (information, task, meeting, decision, follow_up, other),
 scenario, summary, contact_name, company_or_project, confidence (0 to 1), and
-work_items. Each work item has kind, title, deadline (ISO-8601 or null), urgency
+availability_preferences (a concise statement of any days or times explicitly
+offered by the sender, otherwise null), and work_items. Each work item has kind,
+title, deadline (ISO-8601 or null), urgency
 (exactly low, medium, or high),
 proposed_action, suggested_reply, requires_approval, owner, amount, currency, and
 notes. Return an empty work_items
@@ -31,7 +33,8 @@ so the human can enter the final decision outcome. If communicating that decisio
 also requires a reply, create a separate follow_up item with the suggested reply.
 For recruitment mail, create a job_application item. Include the candidate name,
 target role, relevant experience and skills in concise notes; set the hiring team
-or recruiter as owner when stated. Do not make a final hiring decision.
+or recruiter as owner when stated. Preserve stated interview availability in
+availability_preferences. Do not make a final hiring decision.
 Likewise, keep operational work (task, payment, contract_review, sales_lead,
 customer_issue, job_application, or risk) separate from a follow_up reply item.
 Do not combine unrelated work into one item.

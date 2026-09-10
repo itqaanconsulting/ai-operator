@@ -24,8 +24,9 @@ automatically.
   workflow, with duplicate-card protection.
 - Treats a Trello candidate move as the hiring decision, requests only missing
   execution details, and creates one Calendar event plus one unsent Gmail draft
-  from a single **Schedule interview** action. The result is written back to the
-  Trello card through n8n.
+  from a single **Schedule interview** action. It proposes three conflict-free
+  times based on the candidate's stated availability and the recruiter's Calendar.
+  The result moves the Trello card to a final status through n8n.
 - Normalizes Calendar proposals, defaults a missing end to 30 minutes, rejects
   past times, and returns corrected failed proposals to the approval queue.
 - Provides an authenticated n8n schedule entry point for proactive Gmail intake;
@@ -104,6 +105,17 @@ a private internal connection to the API. See `docs/n8n-local.md`.
 Open `http://127.0.0.1:8000/docs` to use the interactive API documentation.
 
 For the operator dashboard, open `http://127.0.0.1:8000/dashboard`.
+
+If Google reports that the OAuth token expired or was revoked, reauthorize from
+the Windows host (not from inside Docker):
+
+```powershell
+.\scripts\reauthorize-google.ps1
+```
+
+Approve both Gmail and Google Calendar access in the browser. The Docker API
+uses the refreshed bind-mounted token automatically; retry the failed dashboard
+action afterward.
 
 ## Analyze an email
 
@@ -330,7 +342,7 @@ Gmail intake -> AI finding -> Trello hiring decision
 -> complete scheduling details -> Calendar event + Gmail draft
 ```
 
-The Trello move to `Interview`, `Rejected`, or `On hold` is the business
+The Trello move to `Schedule interview`, `Rejected`, or `On hold` is the business
 decision. The dashboard does not ask for that decision again. It only collects
 the details required to finish the chosen action. See the complete
 [recruitment demo](docs/recruitment-demo.md).

@@ -57,6 +57,12 @@
 .candidate-next.success { color: var(--primary); background: var(--soft); }
 .date-time-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .date-time-field input { width: 100%; color: var(--ink); font: inherit; font-weight: 400; }
+.slot-suggestions { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--soft); }
+.slot-suggestions > strong { font-size: 13px; }
+.slot-suggestions > span { color: var(--muted); font-size: 13px; }
+.slot-suggestions > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.slot-button { padding: 8px 10px; border: 1px solid #c9d9d3; border-radius: 7px; color: var(--primary); background: #fff; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.slot-button:hover,.slot-button.selected { color: #fff; background: var(--primary); }
 .business-memory { margin-top: 4px; }
 .memory-body { padding: 18px; gap: 14px; }
 .memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }

@@ -62,7 +62,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.39.1-dev")
+app = FastAPI(title="AI Commitment Operator", version="0.40.0-dev")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -132,6 +132,8 @@ def health():
         "calendar_manual_import_enabled": True,
         "calendar_writes_enabled": True,
         "calendar_write_requires_action_approval": True,
+        "candidate_calendar_availability_enabled": True,
+        "candidate_trello_completion_sync_enabled": True,
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
         "document_comparison_enabled": True,
@@ -249,6 +251,27 @@ def update_candidate_interview_package(
     if action is None:
         raise HTTPException(status_code=409, detail="Editable interview package was not found")
     return action
+
+
+@app.get("/actions/{action_id}/interview-slots")
+def suggest_candidate_interview_slots(action_id: int):
+    action = database.get_action_context(action_id)
+    if not action or action["action_type"] != "candidate_interview_package":
+        raise HTTPException(status_code=404, detail="Interview action was not found")
+    if action["status"] not in {"pending_approval", "approved", "failed"}:
+        raise HTTPException(status_code=409, detail="Interview action is already handled")
+    analysis = json.loads(action.get("analysis_json") or "{}")
+    preference_text = " ".join(filter(None, [
+        action.get("subject"), action.get("body"), analysis.get("summary"),
+        analysis.get("availability_preferences"), analysis.get("proposed_action"),
+    ]))
+    try:
+        slots = CalendarOperator(get_calendar_service()).suggest_interview_slots(
+            preference_text=preference_text, count=3
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Calendar availability check failed: {exc}") from exc
+    return {"action_id": action_id, "duration_minutes": 30, "slots": slots}
 
 
 @app.put("/actions/{action_id}/decision-proposal")
@@ -933,6 +956,7 @@ def receive_trello_candidate_status(
     normalized = " ".join(request.list_name.casefold().replace("_", " ").split())
     decision = {
         "interview": "interview", "interview requested": "interview",
+        "schedule interview": "interview",
         "rejected": "reject", "reject": "reject",
         "on hold": "hold", "hold": "hold",
     }.get(normalized)

@@ -12,15 +12,36 @@
       "webhookId": "ai-operator-candidate-result"
     },
     {
-      "parameters": {"resource": "cardComment", "operation": "create", "cardId": {"mode": "id", "value": "={{ $json.body.card_id }}"}, "text": "=AI Operator completed: {{ $json.body.message }}\n\nStatus: {{ $json.body.status }}\nRecord: #{{ $json.body.record_id }}"},
+      "parameters": {
+        "resource": "card",
+        "operation": "update",
+        "id": {"mode": "id", "value": "={{ $('Completed candidate action').item.json.body.card_id }}"},
+        "updateFields": {"idList": "={{ $('Completed candidate action').item.json.body.status === 'interview_scheduled' ? 'REPLACE_WITH_INTERVIEW_SCHEDULED_LIST_ID' : 'REPLACE_WITH_REJECTED_LIST_ID' }}"}
+      },
+      "id": "move-candidate-result",
+      "name": "Move card to final status",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "resource": "cardComment",
+        "operation": "create",
+        "cardId": {"mode": "id", "value": "={{ $('Completed candidate action').item.json.body.card_id }}"},
+        "text": "=AI Operator completed: {{ $('Completed candidate action').item.json.body.message }}\n\nStatus: {{ $('Completed candidate action').item.json.body.status }}\nRecord: #{{ $('Completed candidate action').item.json.body.record_id }}"
+      },
       "id": "comment-candidate-result",
       "name": "Write result to Trello",
       "type": "n8n-nodes-base.trello",
       "typeVersion": 1,
-      "position": [280, 0]
+      "position": [560, 0]
     }
   ],
-  "connections": {"Completed candidate action": {"main": [[{"node": "Write result to Trello", "type": "main", "index": 0}]]}},
+  "connections": {
+    "Completed candidate action": {"main": [[{"node": "Move card to final status", "type": "main", "index": 0}]]},
+    "Move card to final status": {"main": [[{"node": "Write result to Trello", "type": "main", "index": 0}]]}
+  },
   "pinData": {},
   "settings": {"executionOrder": "v1"},
   "active": false,
