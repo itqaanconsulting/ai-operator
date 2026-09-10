@@ -170,6 +170,67 @@ class N8nIntegrationTest(unittest.TestCase):
         self.assertIn("status === 'hired'", list_mapping)
         self.assertIn("REPLACE_WITH_HIRED_LIST_ID", list_mapping)
 
+    @patch("main.dispatch_employee_to_hris")
+    def test_approved_onboarding_syncs_to_airtable_once(self, dispatch_hris):
+        dispatch_hris.return_value = {"id": "recEmployee1"}
+        _, _, action_id = main.database.save_analysis(
+            EmailRequest(
+                sender="Amina <amina@example.com>", subject="Application for Engineer",
+                body="Amina applied.",
+            ),
+            EmailAnalysis(
+                category="task", scenario="hr", summary="Amina applied.", contact_name="Amina",
+                work_items=[EmailWorkItem(
+                    kind="job_application", title="Review Amina for Engineer",
+                    proposed_action="Create candidate review.",
+                )],
+            ),
+        )
+        main.approve_action(action_id, DecisionRequest(note="Approved"))
+        main.execute_action(action_id)
+        record = main.database.list_operational_records()[0]
+        prepared = main.database.prepare_candidate_review_action(record["id"], "hire")
+        from models import CandidateOnboardingPackageUpdateRequest
+        main.update_candidate_onboarding_package(
+            prepared["action_id"], CandidateOnboardingPackageUpdateRequest(
+                employee_name="Amina", personal_email="amina@example.com",
+                job_title="Engineer", start_date="2030-10-01",
+                employment_type="permanent", legal_entity="Example B.V.",
+                hours_per_week=40,
+            ),
+        )
+
+        with patch.dict(os.environ, {
+            "N8N_AIRTABLE_HRIS_WEBHOOK_URL": "http://n8n.test/airtable",
+            "N8N_SHARED_SECRET": "test-secret",
+        }):
+            main.approve_action(prepared["action_id"], DecisionRequest(note="HR approved"))
+            result = main.execute_action(prepared["action_id"])
+            package_id = json.loads(result["payload_json"])["external_result"][
+                "onboarding_package_id"
+            ]
+            second = main.sync_onboarding_package_to_hris(package_id)
+
+        self.assertEqual(result["hris"]["status"], "completed")
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(dispatch_hris.call_count, 1)
+        stored = main.database.list_operational_records()[0]
+        self.assertEqual(stored["hris_status"], "completed")
+        self.assertEqual(stored["hris_employee_id"], "recEmployee1")
+        payload = dispatch_hris.call_args.args[2]
+        self.assertEqual(payload["employment_type"], "Permanent")
+        self.assertEqual(payload["contract_status"], "Draft")
+
+    def test_airtable_workflow_targets_created_employee_table(self):
+        workflow = json.loads(
+            Path("n8n/airtable-employee-onboarding.json").read_text(encoding="utf-8")
+        )
+        node = next(node for node in workflow["nodes"] if node["name"] == "Create Airtable employee")
+
+        self.assertIn("REPLACE_WITH_AIRTABLE_BASE_ID", node["parameters"]["url"])
+        self.assertIn("REPLACE_WITH_EMPLOYEES_TABLE_ID", node["parameters"]["url"])
+        self.assertIn("Employee ID", node["parameters"]["body"])
+
 
 if __name__ == "__main__":
     unittest.main()

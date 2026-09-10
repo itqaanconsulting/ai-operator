@@ -1,0 +1,38 @@
+{
+  "id": "AirtableHris01",
+  "name": "AI Operator - Approved hire to Airtable HR",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "ai-operator-airtable-hris", "authentication": "headerAuth", "responseMode": "lastNode", "options": {}},
+      "id": "approved-hire-webhook",
+      "name": "Approved employee record",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "ai-operator-airtable-hris"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.airtable.com/v0/REPLACE_WITH_AIRTABLE_BASE_ID/REPLACE_WITH_EMPLOYEES_TABLE_ID",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ fields: { 'Employee ID': $('Approved employee record').item.json.body.employee_id, 'Name': $('Approved employee record').item.json.body.name, 'Personal Email': $('Approved employee record').item.json.body.personal_email, 'Job Title': $('Approved employee record').item.json.body.job_title, 'Start Date': $('Approved employee record').item.json.body.start_date, 'Employment Type': $('Approved employee record').item.json.body.employment_type, 'Legal Entity': $('Approved employee record').item.json.body.legal_entity, 'Manager': $('Approved employee record').item.json.body.manager, 'Work Location': $('Approved employee record').item.json.body.work_location, 'Hours Per Week': $('Approved employee record').item.json.body.hours_per_week, 'Contract Status': $('Approved employee record').item.json.body.contract_status, 'Candidate Record ID': $('Approved employee record').item.json.body.candidate_record_id, 'Trello Card': $('Approved employee record').item.json.body.trello_card_url, 'Draft Contract': $('Approved employee record').item.json.body.draft_contract_url, 'Automation Status': $('Approved employee record').item.json.body.automation_status } }) }}",
+        "options": {}
+      },
+      "id": "create-airtable-employee",
+      "name": "Create Airtable employee",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {"Approved employee record": {"main": [[{"node": "Create Airtable employee", "type": "main", "index": 0}]]}},
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "active": false,
+  "tags": []
+}

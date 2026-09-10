@@ -108,15 +108,15 @@ Create these lists on the same Trello recruitment board:
 - `Hired`
 
 Import `n8n/trello-candidate-decisions.json`. Connect the existing Trello
-credential to all three Trello nodes and replace each placeholder list ID with
+credential to all Trello nodes and replace each placeholder list ID with
 the matching list. The workflow polls those decision lists every two minutes and
 calls the private, authenticated AI Operator endpoint. Repeated polls are safe:
 the backend creates at most one active follow-up action per candidate.
 
 Import `n8n/candidate-result-to-trello.json`. Configure its Webhook node with
 the existing Header Auth credential and its Trello node with the existing Trello
-credential. In **Move card to final status**, replace both placeholder list IDs
-with the IDs for `Interview confirmed` and `Rejected`. Publish it at
+credential. In **Move card to final status**, replace each placeholder list ID
+with the matching `Interview confirmed`, `Hired`, or `Rejected` ID. Publish it at
 `/webhook/ai-operator-candidate-result`.
 
 The resulting flow is:
@@ -125,6 +125,7 @@ The resulting flow is:
 Gmail application -> AI review -> Trello New applications
 Trello Schedule interview -> n8n -> choose one of three free Calendar times
 Schedule interview -> Google Calendar event + Gmail draft -> Interview confirmed + result comment
+Trello Hired -> approved onboarding -> draft contract -> Airtable employee record
 ```
 
 Moving a card to `Rejected` prepares an editable Gmail rejection draft and keeps
@@ -142,3 +143,26 @@ The Trello move is the hiring decision. The dashboard does not repeat that
 decision: it presents one **Schedule interview** action after the recruiter has
 completed the date, time, and message details. See
 [`docs/recruitment-demo.md`](recruitment-demo.md) for the end-to-end demo.
+
+## Airtable HR hand-off
+
+The final recruitment hand-off uses Airtable as a lightweight HR system. The
+base is `AI Operator HR Operations`, and the target table is `Employees`.
+Import `n8n/airtable-employee-onboarding.json` and configure its two credentials:
+
+1. On **Approved employee record**, select the existing AI Operator webhook
+   Header Auth credential (`X-AI-Operator-Secret`).
+2. Create a separate Header Auth credential for **Create Airtable employee**.
+   Use header name `Authorization` and value `Bearer YOUR_AIRTABLE_PAT`.
+3. Replace the base and table placeholders in the HTTP Request URL with the IDs
+   from the target Airtable base and Employees table.
+4. Give that Airtable personal access token `data.records:write` access to the
+   target base. The user who created the token must also be allowed to edit it.
+5. Optionally add `AIRTABLE_EMPLOYEES_URL` to `.env.n8n` so completed candidate
+   cards can link directly to the external employee record.
+6. Publish the workflow.
+
+After a recruiter confirms onboarding, the API calls this webhook and n8n creates
+one Employee record. The same approved hire cannot create duplicates. A failed
+hand-off is shown on the candidate card and can be retried there. Contracts stay
+as drafts; no contract or email is sent by this workflow.

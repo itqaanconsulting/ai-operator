@@ -3,11 +3,13 @@
 ![Fictional recruitment workflow in the AI Operator dashboard](images/recruitment-demo-dashboard.png)
 
 This demo shows a small but complete AI-assisted recruitment workflow across
-Gmail, a Python service, n8n, Trello, Google Calendar, and Gmail drafts.
+Gmail, a Python service, n8n, Trello, Google Calendar, Gmail drafts, and Airtable.
 
 The goal is not to replace an applicant tracking system. It demonstrates how an
 AI operator can understand unstructured email, create structured work, coordinate
 multiple business systems, and keep a human in control of consequential actions.
+
+![Fictional candidate pipeline from review to HR hand-off](images/recruitment-demo-cases.png)
 
 ## Business scenario
 
@@ -27,6 +29,7 @@ sequenceDiagram
     participant Trello
     participant Recruiter
     participant Calendar
+    participant Airtable
 
     Candidate->>Gmail: Sends application
     n8n->>Gmail: Scans AI-Operator label
@@ -48,6 +51,9 @@ sequenceDiagram
     AI->>Recruiter: Requests missing employment details
     Recruiter->>AI: Confirms onboarding details
     AI->>AI: Creates employee record and draft contract
+    AI->>n8n: Sends approved employee payload
+    n8n->>Airtable: Creates employee record
+    AI->>Recruiter: Shows contract and Airtable links
 ```
 
 ## What this demonstrates
@@ -55,7 +61,7 @@ sequenceDiagram
 - Structured AI extraction from unstructured email.
 - Multi-scenario recognition rather than keyword-only routing.
 - Separation between AI reasoning and deterministic execution.
-- n8n orchestration across Gmail, Trello, Calendar, and the Python API.
+- n8n orchestration across Gmail, Trello, Calendar, Airtable, and the Python API.
 - Idempotent Gmail imports, Trello dispatches, and Trello decision polling.
 - Human control at the business decision and execution-detail boundaries.
 - Audit history and safe retries when an integration is temporarily unavailable.
@@ -74,6 +80,7 @@ Before running the demo:
 5. Create the Trello lists `New applications`, `Schedule interview`,
    `Interview confirmed`, `Hired`, `On hold`, and `Rejected`.
 6. Create the Gmail label `AI-Operator`.
+7. Configure an Airtable base and the approved-hire workflow for the hire path.
 
 Credentials, tokens, local databases, Trello IDs, and webhook secrets must remain
 local. The workflow templates intentionally contain placeholders instead of
@@ -164,14 +171,16 @@ once. HR follow-up work is kept out of the general review inbox so it is not
 duplicated across dashboard views.
 
 The candidate card then shows `Hired — onboarding ready` and exposes **View
-draft contract** in an in-dashboard document viewer. The draft is stored as an internal HRIS staging record and is
-explicitly incomplete: compensation and jurisdiction-specific clauses must be
-added and approved by authorised HR/legal reviewers. No signature is requested
-and nothing is sent to the candidate.
+draft contract** in an in-dashboard document viewer. It also synchronizes the
+approved employee data through n8n to Airtable and shows **Open employee in
+Airtable**. The draft remains explicitly incomplete: compensation and
+jurisdiction-specific clauses must be added and approved by authorised HR/legal
+reviewers. No signature is requested and nothing is sent to the candidate.
 
-This boundary is intentionally vendor-neutral. A production implementation can
-dispatch the same validated onboarding payload to Frappe HR, OrangeHRM, or a
-customer-specific HRIS without changing the Gmail/Trello decision flow.
+Airtable is the lightweight HR system used by this pilot. The integration boundary
+remains vendor-neutral, so a production implementation can replace it with
+Personio, BambooHR, HiBob, Frappe HR, or a customer-specific HRIS without changing
+the Gmail and Trello decision flow.
 
 ## Create a safe screenshot environment
 
@@ -186,8 +195,9 @@ $env:SAFE_DEMO_MODE = "true"
 ```
 
 Open `http://127.0.0.1:8001/dashboard` for the review-inbox screenshot and
-`http://127.0.0.1:8001/dashboard?view=cases` for the candidate-pipeline
-screenshot. The disposable `demo.db` file is ignored by Git and can be
+`http://127.0.0.1:8001/dashboard?view=cases` for the complete candidate-pipeline
+screenshot, including a fictional completed Airtable hand-off. The disposable
+`demo.db` file is ignored by Git and can be
 regenerated at any time. This avoids publishing real messages, addresses,
 tokens, Trello IDs, or operational history.
 `SAFE_DEMO_MODE` also prevents the screenshot server from querying the real
@@ -208,6 +218,7 @@ new draft to avoid leaving a misleading partial result.
 - Gmail labeling is manual; a production deployment would use an administrator-
   reviewed Gmail rule or a dedicated recruitment inbox.
 - Trello is acting as a lightweight applicant tracker, not a full ATS.
+- Airtable is acting as a lightweight HRIS, not a payroll or identity platform.
 - The n8n Trello decision workflow polls every two minutes instead of using a
   production webhook.
 - CV attachment parsing and job-specific scorecards are not part of this demo.
@@ -226,6 +237,6 @@ leaving clear production extensions.
    decisions.
 3. Replace polling with signed Trello webhooks.
 4. Add recruiter and hiring-manager roles with explicit audit identities.
-5. Add calendar availability lookup and propose valid time slots.
+5. Replace Airtable with the customer's production HRIS connector.
 6. Deploy the API and n8n behind managed authentication, TLS, monitoring, and a
    production database.

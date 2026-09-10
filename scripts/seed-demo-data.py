@@ -158,6 +158,28 @@ def build_demo_database(path: Path) -> None:
         }},
         {"create_onboarding_package"},
     )
+    db.decide_action(
+        onboarding["action_id"], ActionStatus.APPROVED,
+        "Employment details confirmed in fictional demo",
+    )
+    onboarding_action = db.claim_approved_action(onboarding["action_id"])
+    onboarding_payload = json.loads(onboarding_action["payload_json"])["onboarding"]
+    package = db.create_onboarding_package(
+        onboarding_action,
+        onboarding_payload,
+        "DRAFT — FOR HR AND LEGAL REVIEW ONLY\n\nFictional portfolio demonstration.",
+    )
+    db.finish_action(onboarding["action_id"], {
+        "onboarding_package_id": package["id"],
+        "employee_record_created": True,
+        "contract_draft_created": True,
+        "contract_sent": False,
+    })
+    hris_dispatch, _ = db.claim_integration_dispatch(elena["id"], "airtable_hris")
+    db.finish_integration_dispatch(hris_dispatch["id"], {
+        "id": "rec-fictional-elena",
+        "url": "https://airtable.com/appFictional/tblEmployees/recElena",
+    })
 
     _, _, noor_action_id = db.save_analysis(
         EmailRequest(

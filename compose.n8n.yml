@@ -13,6 +13,8 @@ services:
       DATABASE_PATH: /data/operator.db
       N8N_TRELLO_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-trello
       N8N_TRELLO_CANDIDATE_RESULT_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-candidate-result
+      N8N_AIRTABLE_HRIS_WEBHOOK_URL: http://n8n:5678/webhook/ai-operator-airtable-hris
+      AIRTABLE_EMPLOYEES_URL: ${AIRTABLE_EMPLOYEES_URL:-}
       N8N_SHARED_SECRET: ${AI_OPERATOR_WEBHOOK_SECRET}
       GOOGLE_OAUTH_INTERACTIVE: "false"
     volumes:

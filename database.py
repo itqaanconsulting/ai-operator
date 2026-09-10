@@ -951,12 +951,17 @@ class Database:
         query = """SELECT r.*, e.name AS entity_name, em.subject AS source_subject,
                           d.status AS trello_status, d.external_id AS trello_card_id,
                           d.external_url AS trello_card_url, d.error_message AS trello_error,
-                          op.id AS onboarding_package_id, op.status AS onboarding_status
+                          op.id AS onboarding_package_id, op.status AS onboarding_status,
+                          h.status AS hris_status, h.external_id AS hris_employee_id,
+                          h.external_url AS hris_employee_url,
+                          h.error_message AS hris_error
                    FROM operational_records r
                    LEFT JOIN entities e ON e.id = r.entity_id
                    JOIN emails em ON em.id = r.email_id
                    LEFT JOIN integration_dispatches d
                      ON d.operational_record_id = r.id AND d.integration = 'trello'
+                   LEFT JOIN integration_dispatches h
+                     ON h.operational_record_id = r.id AND h.integration = 'airtable_hris'
                    LEFT JOIN onboarding_packages op ON op.candidate_review_id = r.id"""
         params = ()
         if status:
@@ -1252,8 +1257,8 @@ class Database:
             ).fetchone()
             connection.execute(
                 """INSERT INTO audit_log (entity_type, entity_id, event, details_json)
-                   VALUES ('operational_record', ?, 'sent_to_trello', ?)""",
-                (row["operational_record_id"], json.dumps({
+                   VALUES ('operational_record', ?, ?, ?)""",
+                (row["operational_record_id"], f"sent_to_{row['integration']}", json.dumps({
                     "external_id": row["external_id"], "external_url": row["external_url"],
                 })),
             )

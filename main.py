@@ -20,7 +20,12 @@ from document_processor import extract_document
 from gmail_auth import get_gmail_service
 from gmail_operator import GmailOperator, action_reply_subject, action_reply_text
 from inbox_automation import InboxAutomation
-from n8n_operator import N8nDispatchError, dispatch_candidate_result, dispatch_operational_record
+from n8n_operator import (
+    N8nDispatchError,
+    dispatch_candidate_result,
+    dispatch_employee_to_hris,
+    dispatch_operational_record,
+)
 from models import (
     ActionStatus,
     AnalysisResult,
@@ -65,7 +70,7 @@ from follow_ups import FollowUpMonitor, normalize_follow_up_time
 load_dotenv()
 
 database = Database(os.getenv("DATABASE_PATH", "operator.db"))
-app = FastAPI(title="AI Commitment Operator", version="0.41.0-dev")
+app = FastAPI(title="AI Operator", version="0.42.0-dev")
 static_directory = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
@@ -138,6 +143,9 @@ def health():
         "candidate_calendar_availability_enabled": True,
         "candidate_trello_completion_sync_enabled": True,
         "candidate_onboarding_enabled": True,
+        "candidate_hris_sync_configured": bool(
+            os.getenv("N8N_AIRTABLE_HRIS_WEBHOOK_URL")
+        ),
         "contract_draft_requires_hr_legal_review": True,
         "document_analysis_enabled": True,
         "document_signing_enabled": False,
@@ -439,6 +447,49 @@ def _n8n_shared_secret():
             if line.startswith("AI_OPERATOR_WEBHOOK_SECRET="):
                 return line.split("=", 1)[1].strip()
     return ""
+
+
+def _sync_onboarding_package_to_hris(package: dict) -> dict:
+    record_id = package["candidate_review_id"]
+    dispatch, claimed = database.claim_integration_dispatch(record_id, "airtable_hris")
+    if not claimed:
+        return {**dispatch, "duplicate": True}
+    trello = database.get_candidate_trello_dispatch(record_id)
+    public_url = os.getenv("AI_OPERATOR_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
+    employment_types = {
+        "permanent": "Permanent", "fixed_term": "Fixed term", "contractor": "Contractor",
+    }
+    payload = {
+        "employee_id": f"AI-{package['id']:05d}",
+        "name": package["employee_name"],
+        "personal_email": package["personal_email"],
+        "job_title": package["job_title"],
+        "start_date": package["start_date"],
+        "employment_type": employment_types.get(
+            package["employment_type"], package["employment_type"]
+        ),
+        "legal_entity": package["legal_entity"],
+        "manager": package.get("manager") or "",
+        "work_location": package.get("work_location") or "",
+        "hours_per_week": package["hours_per_week"],
+        "contract_status": "Draft",
+        "candidate_record_id": record_id,
+        "trello_card_url": (trello or {}).get("external_url") or "",
+        "draft_contract_url": f"{public_url}/onboarding-packages/{package['id']}/contract",
+        "automation_status": "Synced",
+    }
+    try:
+        result = dispatch_employee_to_hris(
+            os.getenv("N8N_AIRTABLE_HRIS_WEBHOOK_URL", ""), _n8n_shared_secret(), payload
+        )
+        employee_table_url = os.getenv("AIRTABLE_EMPLOYEES_URL", "").rstrip("/")
+        if result.get("id") and not result.get("url") and employee_table_url:
+            result["url"] = f"{employee_table_url}/{result['id']}"
+        completed = database.finish_integration_dispatch(dispatch["id"], result)
+        return {**completed, "duplicate": False}
+    except Exception as exc:
+        database.fail_integration_dispatch(dispatch["id"], str(exc))
+        raise
 
 
 def _require_n8n_secret(supplied_secret: str | None):
@@ -986,6 +1037,20 @@ def execute_action(action_id: int):
         else:
             raise ValueError("This approved action has no external executor")
         finished = database.finish_action(action_id, result)
+        if (
+            action["action_type"] == "create_onboarding_package"
+            and os.getenv("N8N_AIRTABLE_HRIS_WEBHOOK_URL")
+        ):
+            try:
+                hris_result = _sync_onboarding_package_to_hris(package)
+                finished["hris"] = {
+                    "status": hris_result["status"],
+                    "url": hris_result.get("external_url"),
+                    "duplicate": hris_result["duplicate"],
+                }
+            except N8nDispatchError as hris_error:
+                # Hiring remains complete; the HRIS hand-off can be retried from the same card.
+                finished["hris"] = {"status": "failed", "error": str(hris_error)}
         payload = json.loads(action.get("payload_json") or "{}")
         candidate_review_id = payload.get("candidate_review_id")
         if candidate_review_id:
@@ -1056,6 +1121,23 @@ def view_onboarding_contract(package_id: int):
         "Nothing has been sent or signed.</p>"
         f"<pre>{draft}</pre></body></html>"
     )
+
+
+@app.post("/onboarding-packages/{package_id}/sync-to-hris")
+def sync_onboarding_package_to_hris(package_id: int):
+    package = database.get_onboarding_package(package_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Onboarding package was not found")
+    try:
+        result = _sync_onboarding_package_to_hris(package)
+        return {
+            "status": result["status"],
+            "employee_record_id": result.get("external_id"),
+            "employee_record_url": result.get("external_url"),
+            "duplicate": result["duplicate"],
+        }
+    except N8nDispatchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/operational-records")

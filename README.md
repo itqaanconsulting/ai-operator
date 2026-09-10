@@ -1,15 +1,26 @@
-# AI Commitment Operator
+# AI Operator
 
-A safe first step toward an AI executive operator. The application analyzes
-emails, identifies commitments and deadlines, proposes next actions, and places
-those actions in an approval queue. It never performs external actions
-automatically.
+A portfolio-ready, human-in-the-loop AI automation pilot. It turns unstructured
+email into controlled work across Gmail, Trello, Google Calendar, n8n, and
+Airtable while keeping consequential actions behind explicit approval.
 
 **Featured portfolio demo:** [AI recruitment automation](docs/recruitment-demo.md)
 
-![AI recruitment automation with fictional demo data](docs/images/recruitment-demo-dashboard.png)
+![Completed fictional hire with contract and Airtable hand-off](docs/images/recruitment-demo-hired.png)
 
-![Fictional candidate pipeline and grounded AI status search](docs/images/recruitment-demo-cases.png)
+```mermaid
+flowchart LR
+    A[Gmail application] --> B[AI extraction]
+    B --> C{Human review}
+    C --> D[Trello hiring pipeline]
+    D --> E[Calendar event + Gmail draft]
+    D --> F[Draft contract]
+    F --> G[Airtable employee record]
+```
+
+The featured case demonstrates a complete recruitment hand-off, not a collection
+of disconnected API calls. AI interprets the email and proposes work; deterministic
+services validate, approve, execute, audit, and safely retry each integration.
 
 ## Current pilot
 
@@ -31,7 +42,9 @@ automatically.
   The result moves the Trello card to a final status through n8n.
 - Treats a Trello move to **Hired** as a separate HR decision. It prepares one
   approval-gated onboarding form, then creates an internal employee record and
-  a clearly marked draft employment agreement. Nothing is sent or signed.
+  a clearly marked draft employment agreement. The approved employee record can
+  then be synchronized through n8n to an Airtable HR operations base. Nothing is
+  sent or signed.
 - Keeps interview, rejection, onboarding and contract review on the relevant
   candidate card in one dashboard workspace; the general inbox no longer
   duplicates HR follow-up actions.
@@ -604,7 +617,8 @@ a public repository or log.
 
 ## Next steps
 
-1. Connect the onboarding boundary to a customer-selected HRIS such as Frappe HR.
+1. Replace the Airtable pilot adapter with the customer's production HRIS, such
+   as Personio, BambooHR, HiBob, or Frappe HR.
 2. Add grounded CV attachment extraction to the recruitment demo.
 3. Replace Trello polling with a signed webhook.
 4. Add job-specific, human-defined candidate review criteria.

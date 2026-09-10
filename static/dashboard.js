@@ -298,6 +298,17 @@ function candidateNextStep(record) {
   return "";
 }
 
+function candidateHrisAction(record) {
+  if (!record.onboarding_package_id) return "";
+  if (record.hris_status === "completed") return record.hris_employee_url
+    ? `<a class="button secondary" href="${escapeHtml(record.hris_employee_url)}" target="_blank" rel="noopener">Open employee in Airtable</a>`
+    : '<span class="pill completed">Synced to Airtable</span>';
+  const label = record.hris_status === "failed" ? "Retry Airtable sync" : "Create employee in Airtable";
+  const error = record.hris_status === "failed"
+    ? `<span class="supporting-copy">Airtable sync needs attention.</span>` : "";
+  return `<button class="button primary" type="button" data-sync-hris="${record.onboarding_package_id}">${label}</button>${error}`;
+}
+
 function renderCandidateReviews() {
   const statusOrder = { onboarding_pending: 0, hired: 1, interview_pending: 2, interview_scheduled: 3, open: 4, on_hold: 5, rejection_pending: 6, rejection_drafted: 7 };
   const candidates = state.operationalRecords
@@ -316,17 +327,17 @@ function renderCandidateReviews() {
   document.querySelector("#candidate-count").textContent = `${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`;
   elements.candidateReviews.innerHTML = candidates.length ? candidates.map(record => `
     <article class="candidate-card">
-      <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(statusLabels[record.status] || record.status.replaceAll("_", " "))}</span></div>
+      <div class="candidate-card-heading"><div><span>CANDIDATE REVIEW</span><h3>${escapeHtml(record.title)}</h3></div><span class="pill ${escapeHtml(record.status)}">${escapeHtml(record.status === "hired" && record.hris_status === "completed" ? "Hired — employee synced" : statusLabels[record.status] || record.status.replaceAll("_", " "))}</span></div>
       <dl><div><dt>Owner</dt><dd>${escapeHtml(record.owner || "Recruiting")}</dd></div><div><dt>Priority</dt><dd>${escapeHtml(record.priority)}</dd></div></dl>
       <p>${escapeHtml(record.notes || record.next_action)}</p>
       ${record.trello_status === "completed"
-        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.onboarding_package_id ? `<button class="button primary" type="button" data-view-contract="${record.onboarding_package_id}">View draft contract</button>` : ""}${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Hired, Rejected, or On hold.</span>' : ""}</div>`
+        ? `<div class="candidate-actions"><a class="button secondary" href="${escapeHtml(record.trello_card_url)}" target="_blank" rel="noopener">Open hiring board</a>${record.onboarding_package_id ? `<button class="button secondary" type="button" data-view-contract="${record.onboarding_package_id}">View draft contract</button>${candidateHrisAction(record)}` : ""}${record.status === "open" ? '<span class="candidate-next">Move this card to Schedule interview, Hired, Rejected, or On hold.</span>' : ""}</div>`
         : `<div class="candidate-actions"><button class="button primary" data-send-candidate-trello="${record.id}">${record.trello_status === "failed" ? "Retry hiring board" : "Send to hiring board"}</button></div>`}
       ${candidateNextStep(record)}
       ${record.status === "on_hold" ? '<p class="candidate-next">Candidate is on hold. No external action was created.</p>' : ""}
       ${record.status === "interview_scheduled" ? '<p class="candidate-next success">Interview created in Google Calendar.</p>' : ""}
       ${record.status === "rejection_drafted" ? '<p class="candidate-next success">Rejection draft created in Gmail. Nothing was sent.</p>' : ""}
-      ${record.status === "hired" ? '<p class="candidate-next success">Employee record and draft contract created. HR/legal review is still required.</p>' : ""}
+      ${record.status === "hired" ? `<p class="candidate-next success">${record.hris_status === "completed" ? "Employee record synced to Airtable. The draft contract still requires HR/legal review." : "Employee record and draft contract created. HR/legal review is still required."}</p>` : ""}
     </article>`).join("") : '<p class="empty-state">No candidate reviews yet.</p>';
   elements.candidateReviews.querySelectorAll("[data-send-candidate-trello]").forEach(button => {
     button.addEventListener("click", () => sendRecordToTrello(button.dataset.sendCandidateTrello));
@@ -336,6 +347,19 @@ function renderCandidateReviews() {
   elements.candidateReviews.querySelectorAll("[data-create-rejection-draft]").forEach(button => button.addEventListener("click", () => createCandidateRejectionDraft(button.dataset.createRejectionDraft, button)));
   elements.candidateReviews.querySelectorAll("[data-interview-slots]").forEach(container => void loadInterviewSlots(container.dataset.interviewSlots, container));
   elements.candidateReviews.querySelectorAll("[data-view-contract]").forEach(button => button.addEventListener("click", () => openContract(button.dataset.viewContract)));
+  elements.candidateReviews.querySelectorAll("[data-sync-hris]").forEach(button => button.addEventListener("click", () => syncEmployeeToHris(button.dataset.syncHris, button)));
+}
+
+async function syncEmployeeToHris(packageId, button) {
+  button.disabled = true;
+  try {
+    const result = await api(`/onboarding-packages/${packageId}/sync-to-hris`, { method: "POST" });
+    notify(result.duplicate ? "This employee is already in Airtable." : "Employee created in Airtable through n8n.");
+    await refresh();
+  } catch (error) {
+    notify(error.message, true);
+    button.disabled = false;
+  }
 }
 
 async function sendRecordToTrello(id) {
